@@ -239,7 +239,7 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 		return
 	}
 
-	caption := fmt.Sprintf("✅ <b>Tải thành công!</b>\n🎬 %s\n📦 Dung lượng: %.2f MB",
+	caption := fmt.Sprintf("✅ <b>Tải xuống thành công!</b>\n\n🎬 <i>%s</i>\n📦 Dung lượng: <code>%.2f MB</code>",
 		html.EscapeString(title), sizeMB)
 
 	s.LogInfo("Đang tải tệp %s (%.2f MB) trực tiếp lên đám mây Telegram...", format, sizeMB)
@@ -828,7 +828,7 @@ func (s *BotServer) handleVideoSummary(ctx context.Context, b *bot.Bot, chatID i
 		fullReply += token
 		if time.Since(lastEditTime) > 1200*time.Millisecond {
 			lastEditTime = time.Now()
-			replyText := fmt.Sprintf("📝 <b>Tóm tắt Video bằng AI</b>\n\n%s", html.EscapeString(fullReply))
+			replyText := fmt.Sprintf("📝 <b>Tóm tắt Video bằng AI</b>\n\n<blockquote>%s</blockquote>", html.EscapeString(fullReply))
 			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 				ChatID:    chatID,
 				MessageID: statusMsg.ID,
@@ -849,7 +849,7 @@ func (s *BotServer) handleVideoSummary(ctx context.Context, b *bot.Bot, chatID i
 	}
 
 	// Final update
-	replyText := fmt.Sprintf("📝 <b>Tóm tắt Video bằng AI</b>\n\n%s", html.EscapeString(fullReply))
+	replyText := fmt.Sprintf("📝 <b>Tóm tắt Video bằng AI</b>\n\n<blockquote>%s</blockquote>", html.EscapeString(fullReply))
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    chatID,
 		MessageID: statusMsg.ID,

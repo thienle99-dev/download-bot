@@ -84,7 +84,7 @@ func (s *BotServer) handleWebSummary(ctx context.Context, b *bot.Bot, chatID int
 
 		if time.Since(lastEditTime) > 1200*time.Millisecond {
 			lastEditTime = time.Now()
-			replyText := fmt.Sprintf("📰 <b>Tóm tắt Bài viết bằng AI</b>\n🎬 <i>%s</i>\n\n%s", html.EscapeString(title), html.EscapeString(fullReply))
+			replyText := fmt.Sprintf("📰 <b>Tóm tắt Bài viết bằng AI</b>\n🎬 <i>%s</i>\n\n<blockquote>%s</blockquote>", html.EscapeString(title), html.EscapeString(fullReply))
 			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 				ChatID:    chatID,
 				MessageID: statusMsg.ID,
@@ -105,7 +105,7 @@ func (s *BotServer) handleWebSummary(ctx context.Context, b *bot.Bot, chatID int
 	}
 
 	// 6. Final Message Update
-	replyText := fmt.Sprintf("📰 <b>Tóm tắt Bài viết bằng AI</b>\n🎬 <i>%s</i>\n\n%s", html.EscapeString(title), html.EscapeString(fullReply))
+	replyText := fmt.Sprintf("📰 <b>Tóm tắt Bài viết bằng AI</b>\n🎬 <i>%s</i>\n\n<blockquote>%s</blockquote>", html.EscapeString(title), html.EscapeString(fullReply))
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    chatID,
 		MessageID: statusMsg.ID,
