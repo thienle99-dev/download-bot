@@ -17,14 +17,43 @@ import (
 	"github.com/go-telegram/bot"
 )
 
+// Helper to find the web/dist directory dynamically in different environments
+func getWebDistDir() string {
+	// Try 1: Relative to current working directory
+	if _, err := os.Stat(filepath.Join("web", "dist", "index.html")); err == nil {
+		return filepath.Join("web", "dist")
+	}
+	// Try 2: Docker absolute path
+	if _, err := os.Stat("/data/web/dist/index.html"); err == nil {
+		return "/data/web/dist"
+	}
+	// Try 3: Relative to executable
+	if execPath, err := os.Executable(); err == nil {
+		execDir := filepath.Dir(execPath)
+		// Check execDir/web/dist
+		path := filepath.Join(execDir, "web", "dist")
+		if _, err := os.Stat(filepath.Join(path, "index.html")); err == nil {
+			return path
+		}
+		// Check execDir/../web/dist (if run from cmd/bot)
+		path = filepath.Join(execDir, "..", "web", "dist")
+		if _, err := os.Stat(filepath.Join(path, "index.html")); err == nil {
+			return path
+		}
+	}
+	// Fallback
+	return "web/dist"
+}
+
 // RegisterWebRoutes registers both the file delivery, Svelte static frontend, and API endpoints
 func (s *BotServer) RegisterWebRoutes(mux *http.ServeMux) {
 	// Serve files for public download > 50MB
 	mux.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(s.cfg.DownloadDir))))
 
 	// Serve the Admin Dashboard Svelte static bundle
-	// If Svelte is compiled to web/dist, this serves it under /dashboard/ path
-	mux.Handle("/dashboard/", http.StripPrefix("/dashboard/", http.FileServer(http.Dir("web/dist"))))
+	distDir := getWebDistDir()
+	log.Printf("[Dashboard] Serving static files from: %s", distDir)
+	mux.Handle("/dashboard/", http.StripPrefix("/dashboard/", http.FileServer(http.Dir(distDir))))
 
 	// WebSocket log stream endpoint
 	mux.HandleFunc("/dashboard/api/ws", s.handleWebSocketLogs)
