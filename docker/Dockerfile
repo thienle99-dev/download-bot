@@ -13,11 +13,13 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /app/bot ./cmd/bot
+# Optimize Go binary by stripping debug symbols
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/bot ./cmd/bot
 
 # Stage 3: Create execution runtime with python, yt-dlp, and ffmpeg
-FROM python:3.12-slim
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+FROM python:3.12-alpine
+# Alpine is much lighter than debian-slim. Install ffmpeg without caching.
+RUN apk add --no-cache ffmpeg
 RUN pip install --no-cache-dir yt-dlp
 COPY --from=go-builder /app/bot /usr/local/bin/bot
 RUN mkdir -p /data/downloads /data/cache /data/db /data/web/dist
