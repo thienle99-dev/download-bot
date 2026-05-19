@@ -163,8 +163,17 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 
 		// Determine platform name
 		platform := "youtube"
-		if strings.Contains(strings.ToLower(videoURL), "tiktok.com") {
+		urlLower := strings.ToLower(videoURL)
+		if strings.Contains(urlLower, "tiktok.com") || strings.Contains(urlLower, "douyin.com") {
 			platform = "tiktok"
+		} else if strings.Contains(urlLower, "instagram.com") {
+			platform = "instagram"
+		} else if strings.Contains(urlLower, "facebook.com") || strings.Contains(urlLower, "fb.watch") {
+			platform = "facebook"
+		} else if strings.Contains(urlLower, "twitter.com") || strings.Contains(urlLower, "x.com") {
+			platform = "twitter"
+		} else if strings.Contains(urlLower, "bilibili.com") {
+			platform = "bilibili"
 		}
 
 		// Upload file to chat, store record, cache

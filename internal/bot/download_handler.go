@@ -70,8 +70,19 @@ func (s *BotServer) promptFormatSelection(ctx context.Context, b *bot.Bot, msg *
 
 	// Format platform name nicely
 	platform := "YouTube"
-	if strings.Contains(strings.ToLower(info.Extractor), "tiktok") {
-		platform = "TikTok"
+	extractorLower := strings.ToLower(info.Extractor)
+	if strings.Contains(extractorLower, "tiktok") || strings.Contains(extractorLower, "douyin") {
+		platform = "TikTok/Douyin"
+	} else if strings.Contains(extractorLower, "instagram") {
+		platform = "Instagram"
+	} else if strings.Contains(extractorLower, "facebook") {
+		platform = "Facebook"
+	} else if strings.Contains(extractorLower, "twitter") || strings.Contains(extractorLower, "x") {
+		platform = "Twitter/X"
+	} else if strings.Contains(extractorLower, "bilibili") {
+		platform = "Bilibili"
+	} else if info.Extractor != "" {
+		platform = strings.Title(info.Extractor)
 	}
 
 	// Send selection prompt

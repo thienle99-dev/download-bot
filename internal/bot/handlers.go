@@ -20,7 +20,14 @@ func (s *BotServer) isValidURL(rawURL string) bool {
 	host := strings.ToLower(parsed.Host)
 	return strings.Contains(host, "youtube.com") ||
 		strings.Contains(host, "youtu.be") ||
-		strings.Contains(host, "tiktok.com")
+		strings.Contains(host, "tiktok.com") ||
+		strings.Contains(host, "instagram.com") ||
+		strings.Contains(host, "facebook.com") ||
+		strings.Contains(host, "fb.watch") ||
+		strings.Contains(host, "twitter.com") ||
+		strings.Contains(host, "x.com") ||
+		strings.Contains(host, "bilibili.com") ||
+		strings.Contains(host, "douyin.com")
 }
 
 func (s *BotServer) handleCommand(ctx context.Context, b *bot.Bot, msg *models.Message) {
@@ -41,12 +48,12 @@ func (s *BotServer) sendStartMessage(ctx context.Context, b *bot.Bot, chatID int
 	text := `👋 <b>Xin chào! Tôi là Bot Tải Video/MP3 & Xử lý ảnh.</b>
 
 Tôi hỗ trợ:
-• <b>Tải Video/Audio</b> từ YouTube, TikTok (tự động xóa watermark).
+• <b>Tải Video/Audio</b> từ YouTube, TikTok, Facebook, Instagram, Twitter/X, Bilibili, Douyin (tự động xóa watermark).
 • <b>Xử lý ảnh</b> (Gửi 1 hoặc nhiều ảnh để nén JPEG hoặc convert định dạng PNG/WebP đóng gói ZIP).
 
 🚀 <b>Cách sử dụng:</b>
-1. Gửi trực tiếp link video (YouTube/TikTok) hoặc gửi các bức ảnh của bạn vào đây.
-2. Chọn chất lượng video hoặc thao tác xử lý ảnh tương ứng ở menu hiện ra.
+1. Gửi trực tiếp link video hoặc các bức ảnh của bạn vào đây.
+2. Chọn định dạng video/audio hoặc thao tác xử lý ảnh tương ứng ở menu hiện ra.
 3. Bot sẽ tự xử lý và gửi trả file cho bạn nhanh chóng!
 
 <i>Tip: Bot có hỗ trợ Inline Mode cho video! Gõ @username_bot &lt;link&gt; ở cuộc chat bất kỳ để tải nhanh.</i>`
@@ -64,7 +71,7 @@ Tôi hỗ trợ:
 func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int64) {
 	text := `📖 <b>HƯỚNG DẪN SỬ DỤNG BOT</b>
 
-• <b>Tải video/audio:</b> Gửi trực tiếp link video (YouTube/TikTok) vào chat.
+• <b>Tải video/audio:</b> Gửi trực tiếp link video (YouTube/TikTok/Facebook/Instagram/Twitter...) vào chat.
 • <b>Xử lý ảnh:</b> Gửi 1 hoặc nhiều ảnh (album) vào chat, sau đó chọn thao tác nén/chuyển đổi định dạng để nhận file ZIP.
 • <b>Lịch sử tải:</b> Gõ lệnh /history để xem lại 10 video bạn đã tải gần đây.
 • <b>Inline mode:</b> Gõ @username_bot &lt;link&gt; để chia sẻ video trực tiếp vào cuộc chat của bạn bè.
