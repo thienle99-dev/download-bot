@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   bot:
     image: chithien0909/download-bot:latest
