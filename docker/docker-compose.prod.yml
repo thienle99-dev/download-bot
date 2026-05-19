@@ -16,4 +16,6 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data
+      - ./data/downloads:/data/downloads
+      - ./data/db:/data/db
+      - ./data/cache:/data/cache
