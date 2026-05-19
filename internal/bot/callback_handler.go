@@ -37,6 +37,11 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		return
 	}
 
+	if strings.HasPrefix(data, "adm:") {
+		s.handleAdminCallback(ctx, b, callback)
+		return
+	}
+
 	if strings.HasPrefix(data, "dl:") {
 		parts := strings.Split(data, ":")
 		if len(parts) < 3 {

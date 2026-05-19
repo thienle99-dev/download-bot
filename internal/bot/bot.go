@@ -83,6 +83,7 @@ func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
 func (s *BotServer) Start(ctx context.Context) {
 	log.Println("Starting Telegram Bot listener...")
 	go s.StartSessionCleaner(ctx)
+	s.StartCleanupScheduler(ctx)
 	s.tgBot.Start(ctx)
 }
 
@@ -128,7 +129,7 @@ func (s *BotServer) routeUpdate(ctx context.Context, b *bot.Bot, update *models.
 		}
 
 		// Fallback start message
-		s.sendHelpMessage(ctx, b, update.Message.Chat.ID)
+		s.sendHelpMessage(ctx, b, update.Message.Chat.ID, update.Message.From.ID)
 	}
 }
 

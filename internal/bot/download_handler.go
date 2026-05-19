@@ -218,17 +218,25 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 
 	s.LogInfo("Đang tải tệp %s (%.2f MB) trực tiếp lên đám mây Telegram...", format, sizeMB)
 
+	// Send info/title message first
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      caption,
+		ParseMode: models.ParseModeHTML,
+	})
+	if err != nil {
+		log.Printf("Failed to send download completion notification: %v", err)
+	}
+
 	var fileID string
 
 	if format == "mp3" || format == "m4a" || format == "flac" {
 		msg, err := b.SendAudio(ctx, &bot.SendAudioParams{
 			ChatID:  chatID,
-			Caption: caption,
 			Audio: &models.InputFileUpload{
 				Filename: filepath.Base(localPath),
 				Data:     file,
 			},
-			ParseMode: models.ParseModeHTML,
 		})
 		if err != nil {
 			s.LogError("Upload file audio thất bại: %v", err)
@@ -245,12 +253,10 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 	} else {
 		msg, err := b.SendVideo(ctx, &bot.SendVideoParams{
 			ChatID:  chatID,
-			Caption: caption,
 			Video: &models.InputFileUpload{
 				Filename: filepath.Base(localPath),
 				Data:     file,
 			},
-			ParseMode: models.ParseModeHTML,
 		})
 		if err != nil {
 			s.LogError("Upload file video thất bại: %v", err)

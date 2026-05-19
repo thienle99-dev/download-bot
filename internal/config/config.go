@@ -15,8 +15,10 @@ type Config struct {
 	MaxConcurrent int
 	PublicURL     string // URL to serve files (e.g. http://vps-ip:8080)
 	ServerPort    string // Local port to run HTTP file server (e.g. :8080)
-	AdminPassword   string // Dashboard access password
-	AdminTelegramID int64  // Telegram User ID of the administrator
+	AdminPassword          string // Dashboard access password
+	AdminTelegramID        int64  // Telegram User ID of the administrator
+	CleanupIntervalMinutes int    // Cleanup schedule check interval in minutes
+	MaxFileAgeHours        int    // Maximum file age in hours before cleanup
 }
 
 func Load() *Config {
@@ -80,16 +82,32 @@ func Load() *Config {
 		}
 	}
 
+	cleanupInterval := 60
+	if valStr := os.Getenv("CLEANUP_INTERVAL_MINUTES"); valStr != "" {
+		if val, err := strconv.Atoi(valStr); err == nil && val > 0 {
+			cleanupInterval = val
+		}
+	}
+
+	maxFileAge := 24
+	if valStr := os.Getenv("MAX_FILE_AGE_HOURS"); valStr != "" {
+		if val, err := strconv.Atoi(valStr); err == nil && val > 0 {
+			maxFileAge = val
+		}
+	}
+
 	return &Config{
-		BotToken:        token,
-		APIURL:          apiURL,
-		DownloadDir:     downloadDir,
-		CacheDir:        cacheDir,
-		DBPath:          dbPath,
-		MaxConcurrent:   maxConcurrent,
-		PublicURL:       publicURL,
-		ServerPort:      serverPort,
-		AdminPassword:   adminPassword,
-		AdminTelegramID: adminTelegramID,
+		BotToken:               token,
+		APIURL:                 apiURL,
+		DownloadDir:            downloadDir,
+		CacheDir:               cacheDir,
+		DBPath:                 dbPath,
+		MaxConcurrent:          maxConcurrent,
+		PublicURL:              publicURL,
+		ServerPort:             serverPort,
+		AdminPassword:          adminPassword,
+		AdminTelegramID:        adminTelegramID,
+		CleanupIntervalMinutes: cleanupInterval,
+		MaxFileAgeHours:        maxFileAge,
 	}
 }

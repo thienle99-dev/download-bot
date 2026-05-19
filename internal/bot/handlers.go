@@ -34,7 +34,9 @@ func (s *BotServer) isValidURL(rawURL string) bool {
 
 func (s *BotServer) handleCommand(ctx context.Context, b *bot.Bot, msg *models.Message) {
 	cmd := strings.Split(msg.Text, " ")[0]
-	if strings.HasPrefix(cmd, "/del_") {
+	isAdmin := s.cfg.AdminTelegramID != 0 && msg.From.ID == s.cfg.AdminTelegramID
+
+	if strings.HasPrefix(cmd, "/del_") && isAdmin {
 		s.handleDelShortcut(ctx, b, msg, cmd)
 		return
 	}
@@ -43,7 +45,7 @@ func (s *BotServer) handleCommand(ctx context.Context, b *bot.Bot, msg *models.M
 	case "/start":
 		s.sendStartMessage(ctx, b, msg.Chat.ID)
 	case "/help":
-		s.sendHelpMessage(ctx, b, msg.Chat.ID)
+		s.sendHelpMessage(ctx, b, msg.Chat.ID, msg.From.ID)
 	case "/history":
 		s.sendHistoryMessage(ctx, b, msg.From.ID, msg.Chat.ID)
 	case "/clean":
@@ -51,11 +53,19 @@ func (s *BotServer) handleCommand(ctx context.Context, b *bot.Bot, msg *models.M
 	case "/id":
 		s.handleIDCommand(ctx, b, msg)
 	case "/admin":
-		s.handleAdminCommand(ctx, b, msg)
+		if isAdmin {
+			s.handleAdminCommand(ctx, b, msg)
+		} else {
+			s.sendHelpMessage(ctx, b, msg.Chat.ID, msg.From.ID)
+		}
 	case "/del":
-		s.handleDelCommand(ctx, b, msg)
+		if isAdmin {
+			s.handleDelCommand(ctx, b, msg)
+		} else {
+			s.sendHelpMessage(ctx, b, msg.Chat.ID, msg.From.ID)
+		}
 	default:
-		s.sendHelpMessage(ctx, b, msg.Chat.ID)
+		s.sendHelpMessage(ctx, b, msg.Chat.ID, msg.From.ID)
 	}
 }
 
@@ -83,7 +93,7 @@ Tôi hỗ trợ:
 	}
 }
 
-func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int64) {
+func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int64, userID int64) {
 	text := `📖 <b>HƯỚNG DẪN SỬ DỤNG BOT</b>
 
 • <b>Tải video/audio:</b> Gửi trực tiếp link video (YouTube/TikTok/Facebook/Instagram/Twitter...) vào chat.
@@ -97,8 +107,15 @@ func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int6
 /help - Hướng dẫn sử dụng
 /clean - Xóa mã theo dõi khỏi link
 /id - Lấy User ID & Chat ID hiện tại
-/admin - Quản lý tệp tải về (Chỉ Admin)
 /history - Xem lịch sử tải gần nhất`
+
+	if s.cfg.AdminTelegramID != 0 && userID == s.cfg.AdminTelegramID {
+		text += `
+
+🛠️ <b>LỆNH QUẢN TRỊ VIÊN (ADMIN):</b>
+/admin - Liệt kê 15 lượt tải gần đây trên toàn hệ thống kèm link xóa nhanh
+/del &lt;ID&gt; - Xóa tệp vật lý trên VPS và bản ghi SQLite theo ID`
+	}
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:    chatID,
@@ -193,67 +210,6 @@ func (s *BotServer) handleIDCommand(ctx context.Context, b *bot.Bot, msg *models
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:    msg.Chat.ID,
 		Text:      text,
-		ParseMode: models.ParseModeHTML,
-	})
-}
-
-func (s *BotServer) handleAdminCommand(ctx context.Context, b *bot.Bot, msg *models.Message) {
-	if s.cfg.AdminTelegramID == 0 {
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: msg.Chat.ID,
-			Text:   "⚠️ AdminTelegramID chưa được cấu hình trên hệ thống. Vui lòng cấu hình biến môi trường ADMIN_TELEGRAM_ID.",
-		})
-		return
-	}
-
-	if msg.From.ID != s.cfg.AdminTelegramID {
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: msg.Chat.ID,
-			Text:   "❌ Bạn không có quyền quản trị viên.",
-		})
-		return
-	}
-
-	// Fetch recent history
-	history, err := s.db.GetAllHistory(15)
-	if err != nil {
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: msg.Chat.ID,
-			Text:   "❌ Không thể truy vấn danh sách file tải về từ database.",
-		})
-		return
-	}
-
-	if len(history) == 0 {
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: msg.Chat.ID,
-			Text:   "📋 Chưa có video nào được tải về trên hệ thống.",
-		})
-		return
-	}
-
-	var sb strings.Builder
-	sb.WriteString("🛠️ <b>Hệ thống quản lý tải xuống (Admin):</b>\n\n")
-	for _, h := range history {
-		existSymbol := "🟢"
-		if _, err := os.Stat(h.FilePath); err != nil {
-			existSymbol = "🔴"
-		}
-		title := h.Title
-		if len(title) > 30 {
-			title = title[:27] + "..."
-		}
-		sizeMB := float64(h.FileSize) / (1024 * 1024)
-		sb.WriteString(fmt.Sprintf("🔑 <b>ID: %d</b> | %s %s\n", h.ID, existSymbol, html.EscapeString(title)))
-		sb.WriteString(fmt.Sprintf("   • Định dạng: <code>%s</code> | %.1f MB\n", h.Format, sizeMB))
-		sb.WriteString(fmt.Sprintf("   • User: <code>%d</code>\n", h.UserID))
-		sb.WriteString(fmt.Sprintf("   • Xóa: /del_%d\n\n", h.ID))
-	}
-	sb.WriteString("💡 <i>Gõ <code>/del &lt;ID&gt;</code> hoặc nhấn vào liên kết /del_&lt;ID&gt; để xóa bản ghi + file vật lý.</i>")
-
-	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    msg.Chat.ID,
-		Text:      sb.String(),
 		ParseMode: models.ParseModeHTML,
 	})
 }
