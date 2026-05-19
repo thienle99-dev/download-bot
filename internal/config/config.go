@@ -15,7 +15,8 @@ type Config struct {
 	MaxConcurrent int
 	PublicURL     string // URL to serve files (e.g. http://vps-ip:8080)
 	ServerPort    string // Local port to run HTTP file server (e.g. :8080)
-	AdminPassword string // Dashboard access password
+	AdminPassword   string // Dashboard access password
+	AdminTelegramID int64  // Telegram User ID of the administrator
 }
 
 func Load() *Config {
@@ -71,15 +72,24 @@ func Load() *Config {
 		}
 	}
 
+	adminTelegramIDStr := os.Getenv("ADMIN_TELEGRAM_ID")
+	var adminTelegramID int64
+	if adminTelegramIDStr != "" {
+		if val, err := strconv.ParseInt(adminTelegramIDStr, 10, 64); err == nil {
+			adminTelegramID = val
+		}
+	}
+
 	return &Config{
-		BotToken:      token,
-		APIURL:        apiURL,
-		DownloadDir:   downloadDir,
-		CacheDir:      cacheDir,
-		DBPath:        dbPath,
-		MaxConcurrent: maxConcurrent,
-		PublicURL:     publicURL,
-		ServerPort:    serverPort,
-		AdminPassword: adminPassword,
+		BotToken:        token,
+		APIURL:          apiURL,
+		DownloadDir:     downloadDir,
+		CacheDir:        cacheDir,
+		DBPath:          dbPath,
+		MaxConcurrent:   maxConcurrent,
+		PublicURL:       publicURL,
+		ServerPort:      serverPort,
+		AdminPassword:   adminPassword,
+		AdminTelegramID: adminTelegramID,
 	}
 }

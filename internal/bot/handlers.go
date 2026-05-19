@@ -6,6 +6,8 @@ import (
 	"html"
 	"log"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/go-telegram/bot"
@@ -32,6 +34,11 @@ func (s *BotServer) isValidURL(rawURL string) bool {
 
 func (s *BotServer) handleCommand(ctx context.Context, b *bot.Bot, msg *models.Message) {
 	cmd := strings.Split(msg.Text, " ")[0]
+	if strings.HasPrefix(cmd, "/del_") {
+		s.handleDelShortcut(ctx, b, msg, cmd)
+		return
+	}
+
 	switch cmd {
 	case "/start":
 		s.sendStartMessage(ctx, b, msg.Chat.ID)
@@ -41,6 +48,12 @@ func (s *BotServer) handleCommand(ctx context.Context, b *bot.Bot, msg *models.M
 		s.sendHistoryMessage(ctx, b, msg.From.ID, msg.Chat.ID)
 	case "/clean":
 		s.handleCleanCommand(ctx, b, msg)
+	case "/id":
+		s.handleIDCommand(ctx, b, msg)
+	case "/admin":
+		s.handleAdminCommand(ctx, b, msg)
+	case "/del":
+		s.handleDelCommand(ctx, b, msg)
 	default:
 		s.sendHelpMessage(ctx, b, msg.Chat.ID)
 	}
@@ -83,6 +96,8 @@ func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int6
 /start - Bắt đầu sử dụng bot
 /help - Hướng dẫn sử dụng
 /clean - Xóa mã theo dõi khỏi link
+/id - Lấy User ID & Chat ID hiện tại
+/admin - Quản lý tệp tải về (Chỉ Admin)
 /history - Xem lịch sử tải gần nhất`
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
@@ -126,7 +141,7 @@ func (s *BotServer) sendHistoryMessage(ctx context.Context, b *bot.Bot, userID i
 
 		sizeMB := float64(h.FileSize) / (1024 * 1024)
 		typeIcon := "🎬"
-		if h.Format == "mp3" {
+		if h.Format == "mp3" || h.Format == "m4a" || h.Format == "flac" {
 			typeIcon = "🎵"
 		}
 
@@ -173,3 +188,178 @@ func (s *BotServer) handleCleanCommand(ctx context.Context, b *bot.Bot, msg *mod
 	})
 }
 
+func (s *BotServer) handleIDCommand(ctx context.Context, b *bot.Bot, msg *models.Message) {
+	text := fmt.Sprintf("👤 <b>Thông tin tài khoản:</b>\n\n• User ID: <code>%d</code>\n• Chat ID: <code>%d</code>", msg.From.ID, msg.Chat.ID)
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    msg.Chat.ID,
+		Text:      text,
+		ParseMode: models.ParseModeHTML,
+	})
+}
+
+func (s *BotServer) handleAdminCommand(ctx context.Context, b *bot.Bot, msg *models.Message) {
+	if s.cfg.AdminTelegramID == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "⚠️ AdminTelegramID chưa được cấu hình trên hệ thống. Vui lòng cấu hình biến môi trường ADMIN_TELEGRAM_ID.",
+		})
+		return
+	}
+
+	if msg.From.ID != s.cfg.AdminTelegramID {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "❌ Bạn không có quyền quản trị viên.",
+		})
+		return
+	}
+
+	// Fetch recent history
+	history, err := s.db.GetAllHistory(15)
+	if err != nil {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "❌ Không thể truy vấn danh sách file tải về từ database.",
+		})
+		return
+	}
+
+	if len(history) == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "📋 Chưa có video nào được tải về trên hệ thống.",
+		})
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("🛠️ <b>Hệ thống quản lý tải xuống (Admin):</b>\n\n")
+	for _, h := range history {
+		existSymbol := "🟢"
+		if _, err := os.Stat(h.FilePath); err != nil {
+			existSymbol = "🔴"
+		}
+		title := h.Title
+		if len(title) > 30 {
+			title = title[:27] + "..."
+		}
+		sizeMB := float64(h.FileSize) / (1024 * 1024)
+		sb.WriteString(fmt.Sprintf("🔑 <b>ID: %d</b> | %s %s\n", h.ID, existSymbol, html.EscapeString(title)))
+		sb.WriteString(fmt.Sprintf("   • Định dạng: <code>%s</code> | %.1f MB\n", h.Format, sizeMB))
+		sb.WriteString(fmt.Sprintf("   • User: <code>%d</code>\n", h.UserID))
+		sb.WriteString(fmt.Sprintf("   • Xóa: /del_%d\n\n", h.ID))
+	}
+	sb.WriteString("💡 <i>Gõ <code>/del &lt;ID&gt;</code> hoặc nhấn vào liên kết /del_&lt;ID&gt; để xóa bản ghi + file vật lý.</i>")
+
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    msg.Chat.ID,
+		Text:      sb.String(),
+		ParseMode: models.ParseModeHTML,
+	})
+}
+
+func (s *BotServer) handleDelCommand(ctx context.Context, b *bot.Bot, msg *models.Message) {
+	parts := strings.SplitN(msg.Text, " ", 2)
+	if len(parts) < 2 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:    msg.Chat.ID,
+			Text:      "⚠️ Vui lòng sử dụng cú pháp: <code>/del &lt;ID&gt;</code>",
+			ParseMode: models.ParseModeHTML,
+		})
+		return
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+	if err != nil {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "❌ ID không hợp lệ.",
+		})
+		return
+	}
+	s.performDelete(ctx, b, msg.Chat.ID, msg.From.ID, id)
+}
+
+func (s *BotServer) handleDelShortcut(ctx context.Context, b *bot.Bot, msg *models.Message, cmd string) {
+	idStr := strings.TrimPrefix(cmd, "/del_")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "❌ ID không hợp lệ.",
+		})
+		return
+	}
+	s.performDelete(ctx, b, msg.Chat.ID, msg.From.ID, id)
+}
+
+func (s *BotServer) performDelete(ctx context.Context, b *bot.Bot, chatID int64, userID int64, id int64) {
+	if s.cfg.AdminTelegramID == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "⚠️ AdminTelegramID chưa được cấu hình trên hệ thống. Vui lòng cấu hình biến môi trường ADMIN_TELEGRAM_ID.",
+		})
+		return
+	}
+
+	if userID != s.cfg.AdminTelegramID {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Bạn không có quyền quản trị viên.",
+		})
+		return
+	}
+
+	// Fetch history record to delete the file physically too
+	h, err := s.db.GetDownloadByID(id)
+	if err != nil {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   fmt.Sprintf("❌ Lỗi truy vấn dữ liệu: %v", err),
+		})
+		return
+	}
+
+	if h == nil {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Không tìm thấy bản ghi tải xuống với ID này.",
+		})
+		return
+	}
+
+	// Attempt to physically remove the file
+	fileDeleted := false
+	if err := os.Remove(h.FilePath); err == nil {
+		fileDeleted = true
+	} else if os.IsNotExist(err) {
+		fileDeleted = true // Already gone
+	} else {
+		log.Printf("Failed to physically remove file %s: %v", h.FilePath, err)
+	}
+
+	// Also clean cache references
+	s.cache.Remove(h.UserID, h.URL)
+
+	// Delete from DB
+	if err := s.db.DeleteDownload(id); err != nil {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   fmt.Sprintf("❌ Lỗi xóa khỏi database: %v", err),
+		})
+		return
+	}
+
+	statusText := "Đã xóa bản ghi khỏi SQLite."
+	if fileDeleted {
+		statusText = "Đã xóa file vật lý khỏi VPS và bản ghi khỏi SQLite."
+	} else {
+		statusText = "Đã xóa bản ghi khỏi SQLite (không tìm thấy file vật lý trên VPS)."
+	}
+
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      fmt.Sprintf("✅ <b>Đã xóa thành công ID %d!</b>\n📝 Trạng thái: %s", id, statusText),
+		ParseMode: models.ParseModeHTML,
+	})
+	s.LogInfo("Admin %d đã xóa bản ghi ID %d và file vật lý thành công.", userID, id)
+}
