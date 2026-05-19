@@ -22,3 +22,11 @@ type UserStat struct {
 	DownloadCount int       `json:"download_count"`
 	LastDownload  time.Time `json:"last_download"`
 }
+
+type StickerSet struct {
+	ID        int64     `db:"id"`
+	UserID    int64     `db:"user_id"`
+	Name      string    `db:"name"`
+	Title     string    `db:"title"`
+	CreatedAt time.Time `db:"created_at"`
+}

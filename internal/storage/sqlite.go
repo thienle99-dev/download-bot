@@ -59,6 +59,15 @@ func createSchema(db *sql.DB) error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_history_user ON download_history(user_id);
 	CREATE INDEX IF NOT EXISTS idx_history_url ON download_history(url);
+
+	CREATE TABLE IF NOT EXISTS sticker_sets (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL,
+		name TEXT UNIQUE NOT NULL,
+		title TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_stickers_user ON sticker_sets(user_id);
 	`
 	_, err := db.Exec(schema)
 	return err

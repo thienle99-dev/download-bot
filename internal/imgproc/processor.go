@@ -86,3 +86,24 @@ func ProcessImage(ctx context.Context, inputPath string, outputDir string, opt P
 
 	return outputPath, nil
 }
+
+// ProcessSticker resizes an image to fit Telegram sticker specification (512x512, WEBP, aspect ratio preserved)
+func ProcessSticker(ctx context.Context, inputPath string, outputPath string) error {
+	inputPath = filepath.Clean(inputPath)
+	outputPath = filepath.Clean(outputPath)
+
+	// scale='if(gt(iw,ih),512,-1)':'if(gt(iw,ih),-1,512)'
+	args := []string{
+		"-i", inputPath,
+		"-vf", "scale='if(gt(iw,ih),512,-1)':'if(gt(iw,ih),-1,512)'",
+		"-c:v", "libwebp",
+		"-y", outputPath,
+	}
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg sticker failed: %s: %w", string(output), err)
+	}
+	return nil
+}
+

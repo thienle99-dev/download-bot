@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -213,6 +214,24 @@ func (s *BotServer) handleImageCallback(ctx context.Context, b *bot.Bot, callbac
 		return
 	}
 
+	if data == "img:sticker" {
+		s.handleStickerCallback(ctx, b, callback)
+		return
+	}
+	if data == "img:st_new" {
+		s.handleStickerNewCallback(ctx, b, callback)
+		return
+	}
+	if strings.HasPrefix(data, "img:st_add:") {
+		setName := strings.TrimPrefix(data, "img:st_add:")
+		s.handleStickerAddCallback(ctx, b, callback, setName)
+		return
+	}
+	if data == "img:st_back" {
+		s.handleStickerBackCallback(ctx, b, callback)
+		return
+	}
+
 	parts := strings.Split(data, ":")
 	if len(parts) < 3 {
 		return
@@ -404,4 +423,305 @@ func (s *BotServer) StartSessionCleaner(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (s *BotServer) handleStickerCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	userID := callback.From.ID
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+
+	// Check if user already has sticker sets registered in SQLite
+	sets, err := s.db.GetUserStickerSets(userID)
+	if err != nil {
+		s.LogError("Get user sticker sets failed: %v", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Đã xảy ra lỗi khi kiểm tra các bộ Sticker của bạn. Vui lòng thử lại sau.",
+		})
+		s.cleanupImageSession(userID)
+		return
+	}
+
+	if len(sets) == 0 {
+		// User has no sets yet, automatically route to creating a new set
+		s.handleStickerNewCallback(ctx, b, callback)
+		return
+	}
+
+	// User has sets, prompt them to choose
+	text := fmt.Sprintf("✨ <b>Tạo Sticker</b>\n\nBạn đã có <b>%d bộ Sticker</b> được tạo qua bot.\nBạn muốn tạo một bộ mới hay thêm ảnh vừa gửi vào bộ hiện có?", len(sets))
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:      chatID,
+		MessageID:   messageID,
+		Text:        text,
+		ParseMode:   models.ParseModeHTML,
+		ReplyMarkup: BuildStickerActionKeyboard(sets),
+	})
+}
+
+func (s *BotServer) handleStickerNewCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	userID := callback.From.ID
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+
+	s.imageSessionsMu.RLock()
+	sess, exists := s.imageSessions[userID]
+	s.imageSessionsMu.RUnlock()
+
+	if !exists {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Phiên xử lý ảnh đã hết hạn. Vui lòng gửi lại ảnh mới.",
+		})
+		return
+	}
+
+	sess.Mu.Lock()
+	photos := make([]string, len(sess.Photos))
+	copy(photos, sess.Photos)
+	sess.Mu.Unlock()
+
+	if len(photos) == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Không tìm thấy ảnh nào để tạo Sticker.",
+		})
+		s.cleanupImageSession(userID)
+		return
+	}
+
+	// Lấy ảnh cuối cùng gửi lên để làm sticker
+	photoPath := photos[len(photos)-1]
+
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+		Text:      "⏳ Đang khởi tạo bộ Sticker mới của bạn...",
+	})
+
+	userTempDir := filepath.Join(s.cfg.DownloadDir, "img_tmp", fmt.Sprintf("%d", userID))
+	stickerPath := filepath.Join(userTempDir, fmt.Sprintf("sticker_%d.webp", time.Now().UnixNano()))
+
+	if err := imgproc.ProcessSticker(ctx, photoPath, stickerPath); err != nil {
+		s.LogError("ProcessSticker failed: %v", err)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Text:      "❌ Không thể xử lý ảnh thành chuẩn Sticker Telegram.",
+		})
+		s.cleanupImageSession(userID)
+		return
+	}
+
+	me, err := b.GetMe(ctx)
+	if err != nil {
+		s.LogError("GetMe failed: %v", err)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Text:      "❌ Lỗi kết nối với Telegram API.",
+		})
+		s.cleanupImageSession(userID)
+		return
+	}
+	botUsername := me.Username
+
+	// Generate safe, unique sticker set name ending with _by_<bot_username>
+	setName := fmt.Sprintf("st_%d_%d_by_%s", userID, time.Now().Unix(), botUsername)
+
+	title := callback.From.FirstName
+	if title == "" {
+		title = "Bạn"
+	}
+	setSubTitle := fmt.Sprintf("Sticker Pack của %s #%d", title, time.Now().Unix()%1000)
+
+	file, err := os.Open(stickerPath)
+	if err != nil {
+		s.LogError("Open sticker file failed: %v", err)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Text:      "❌ Lỗi mở tệp sticker trên máy chủ.",
+		})
+		s.cleanupImageSession(userID)
+		return
+	}
+	defer file.Close()
+
+	_, err = b.CreateNewStickerSet(ctx, &bot.CreateNewStickerSetParams{
+		UserID: userID,
+		Name:   setName,
+		Title:  setSubTitle,
+		Stickers: []models.InputSticker{
+			{
+				Sticker:           "attach://sticker_file",
+				Format:            "static",
+				EmojiList:         []string{"✨"},
+				StickerAttachment: file,
+			},
+		},
+	})
+	if err != nil {
+		s.LogError("CreateNewStickerSet failed: %v", err)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Text:      "❌ Không thể tạo bộ Sticker trên Telegram. Hãy thử lại sau.",
+		})
+		s.cleanupImageSession(userID)
+		return
+	}
+
+	// Lưu thông tin set vào SQLite
+	if err := s.db.SaveStickerSet(userID, setName, setSubTitle); err != nil {
+		s.LogError("SaveStickerSet DB failed: %v", err)
+	}
+
+	link := fmt.Sprintf("https://t.me/addstickers/%s", setName)
+	successText := fmt.Sprintf("✅ <b>Đã tạo thành công bộ Sticker mới!</b>\n\n📌 Tiêu đề: <code>%s</code>\n\n🔗 Nhấn vào liên kết dưới đây để thêm bộ Sticker vào Telegram của bạn:\n👉 %s", html.EscapeString(setSubTitle), link)
+
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      successText,
+		ParseMode: models.ParseModeHTML,
+	})
+
+	_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+	})
+
+	s.cleanupImageSession(userID)
+}
+
+func (s *BotServer) handleStickerAddCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, setName string) {
+	userID := callback.From.ID
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+
+	s.imageSessionsMu.RLock()
+	sess, exists := s.imageSessions[userID]
+	s.imageSessionsMu.RUnlock()
+
+	if !exists {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Phiên xử lý ảnh đã hết hạn. Vui lòng gửi lại ảnh mới.",
+		})
+		return
+	}
+
+	sess.Mu.Lock()
+	photos := make([]string, len(sess.Photos))
+	copy(photos, sess.Photos)
+	sess.Mu.Unlock()
+
+	if len(photos) == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Không tìm thấy ảnh nào để làm Sticker.",
+		})
+		s.cleanupImageSession(userID)
+		return
+	}
+
+	// Lấy ảnh cuối cùng gửi lên
+	photoPath := photos[len(photos)-1]
+
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+		Text:      "⏳ Đang thêm sticker mới vào bộ của bạn...",
+	})
+
+	userTempDir := filepath.Join(s.cfg.DownloadDir, "img_tmp", fmt.Sprintf("%d", userID))
+	stickerPath := filepath.Join(userTempDir, fmt.Sprintf("sticker_%d.webp", time.Now().UnixNano()))
+
+	if err := imgproc.ProcessSticker(ctx, photoPath, stickerPath); err != nil {
+		s.LogError("ProcessSticker failed: %v", err)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Text:      "❌ Không thể xử lý ảnh thành chuẩn Sticker Telegram.",
+		})
+		s.cleanupImageSession(userID)
+		return
+	}
+
+	file, err := os.Open(stickerPath)
+	if err != nil {
+		s.LogError("Open sticker file failed: %v", err)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Text:      "❌ Lỗi mở tệp sticker trên máy chủ.",
+		})
+		s.cleanupImageSession(userID)
+		return
+	}
+	defer file.Close()
+
+	_, err = b.AddStickerToSet(ctx, &bot.AddStickerToSetParams{
+		UserID: userID,
+		Name:   setName,
+		Sticker: models.InputSticker{
+			Sticker:           "attach://sticker_file",
+			Format:            "static",
+			EmojiList:         []string{"✨"},
+			StickerAttachment: file,
+		},
+	})
+	if err != nil {
+		s.LogError("AddStickerToSet failed: %v", err)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Text:      "❌ Không thể thêm Sticker vào bộ này. Vui lòng kiểm tra lại giới hạn bộ Sticker (tối đa 120 cái).",
+		})
+		s.cleanupImageSession(userID)
+		return
+	}
+
+	link := fmt.Sprintf("https://t.me/addstickers/%s", setName)
+	successText := fmt.Sprintf("✅ <b>Đã thêm Sticker mới thành công!</b>\n\n🔗 Nhấn vào liên kết dưới đây để cập nhật/xem bộ Sticker của bạn:\n👉 %s", link)
+
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      successText,
+		ParseMode: models.ParseModeHTML,
+	})
+
+	_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+	})
+
+	s.cleanupImageSession(userID)
+}
+
+func (s *BotServer) handleStickerBackCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	userID := callback.From.ID
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+
+	s.imageSessionsMu.RLock()
+	sess, exists := s.imageSessions[userID]
+	s.imageSessionsMu.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	sess.Mu.Lock()
+	photoCount := len(sess.Photos)
+	sess.Mu.Unlock()
+
+	text := fmt.Sprintf("📸 Đã nhận <b>%d ảnh</b> từ bạn.\n\nChọn thao tác nén hoặc chuyển đổi định dạng ảnh:", photoCount)
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:      chatID,
+		MessageID:   messageID,
+		Text:        text,
+		ParseMode:   models.ParseModeHTML,
+		ReplyMarkup: BuildImageKeyboard(),
+	})
 }
