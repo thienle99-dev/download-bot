@@ -1,0 +1,11 @@
+.git/
+node_modules/
+web/node_modules/
+web/dist/
+web/.svelte-kit/
+downloads/
+cache/
+bot.db
+.env
+.agent/
+.vscode/
