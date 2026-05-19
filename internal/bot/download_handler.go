@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"download-bot/internal/downloader"
 	"download-bot/internal/storage"
 
 	"github.com/go-telegram/bot"
@@ -232,7 +233,7 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 
 	if format == "mp3" || format == "m4a" || format == "flac" {
 		msg, err := b.SendAudio(ctx, &bot.SendAudioParams{
-			ChatID:  chatID,
+			ChatID: chatID,
 			Audio: &models.InputFileUpload{
 				Filename: filepath.Base(localPath),
 				Data:     file,
@@ -252,7 +253,7 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 		}
 	} else {
 		msg, err := b.SendVideo(ctx, &bot.SendVideoParams{
-			ChatID:  chatID,
+			ChatID: chatID,
 			Video: &models.InputFileUpload{
 				Filename: filepath.Base(localPath),
 				Data:     file,
@@ -271,6 +272,9 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 			fileID = msg.Video.FileID
 		}
 	}
+
+	// Close file handle explicitly to allow deletion on all systems
+	_ = file.Close()
 
 	if fileID != "" {
 		s.LogInfo("Upload thành công. Telegram FileID: %s", fileID)
@@ -294,5 +298,185 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 
 		// Save to per-user LRU file cache
 		s.cache.Add(userID, videoURL, localPath, fileID)
+
+		// Delete local file to save VPS storage since Telegram already has the file cloud cached
+		if err := os.Remove(localPath); err != nil {
+			log.Printf("Failed to remove downloaded local file %s: %v", localPath, err)
+		} else {
+			s.LogInfo("Đã xóa file vật lý cục bộ %s sau khi gửi thành công lên Telegram Cloud.", filepath.Base(localPath))
+		}
+	}
+}
+
+func (s *BotServer) handleCutProcess(ctx context.Context, b *bot.Bot, msg *models.Message, videoURL string, rangeStr string) {
+	chatID := msg.Chat.ID
+	userID := msg.From.ID
+
+	// 1. Send processing status
+	statusMsg, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: chatID,
+		Text:   "🔍 Đang kiểm tra khoảng thời gian và phân tích video...",
+	})
+	if err != nil {
+		log.Printf("Failed to send cut status message: %v", err)
+		return
+	}
+
+	// 2. Parse range
+	start, end, err := downloader.ParseRange(rangeStr)
+	if err != nil {
+		b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+			Text:      fmt.Sprintf("❌ Lỗi: %v\nVui lòng thử lại với định dạng đúng, ví dụ: <code>10-40</code> hoặc <code>0:10-0:40</code>", err),
+			ParseMode: models.ParseModeHTML,
+		})
+		return
+	}
+
+	duration := end - start
+	if duration > 60 {
+		b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+			Text:      fmt.Sprintf("⚠️ Thời lượng cắt yêu cầu là %.0f giây. Chỉ hỗ trợ cắt tối đa 60 giây để tránh quá tải máy chủ.", duration),
+		})
+		return
+	}
+
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: statusMsg.ID,
+		Text:      fmt.Sprintf("⏳ Đang tải và cắt phân đoạn từ %.0fs đến %.0fs (độ dài: %.0fs)...", start, end, duration),
+	})
+
+	// 3. Download and slice section
+	result, err := s.dl.DownloadSection(ctx, videoURL, start, end)
+	if err != nil {
+		s.LogError("Cắt video thất bại: %v", err)
+		b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+			Text:      "❌ Quá trình tải và cắt phân đoạn thất bại. Vui lòng kiểm tra lại liên kết hoặc thử lại sau.",
+		})
+		return
+	}
+	defer os.Remove(result.FilePath) // Cleanup MP4 after processing
+
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: statusMsg.ID,
+		Text:      "🎞 Đang chuyển đổi thành ảnh động GIF...",
+	})
+
+	// 4. Convert to GIF
+	gifPath := strings.TrimSuffix(result.FilePath, ".mp4") + ".gif"
+	err = downloader.ConvertToGIF(ctx, result.FilePath, gifPath)
+	if err != nil {
+		s.LogError("Convert GIF thất bại: %v", err)
+		b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+			Text:      "❌ Lỗi chuyển đổi file GIF, đang thử gửi lại clip MP4...",
+		})
+	}
+	defer os.Remove(gifPath) // Cleanup GIF after sending
+
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: statusMsg.ID,
+		Text:      "📤 Đang gửi clip MP4 và ảnh động GIF lên Telegram...",
+	})
+
+	// Determine platform name
+	platform := "youtube"
+	urlLower := strings.ToLower(videoURL)
+	if strings.Contains(urlLower, "tiktok.com") || strings.Contains(urlLower, "douyin.com") {
+		platform = "tiktok"
+	} else if strings.Contains(urlLower, "instagram.com") {
+		platform = "instagram"
+	} else if strings.Contains(urlLower, "facebook.com") || strings.Contains(urlLower, "fb.watch") {
+		platform = "facebook"
+	} else if strings.Contains(urlLower, "twitter.com") || strings.Contains(urlLower, "x.com") {
+		platform = "twitter"
+	} else if strings.Contains(urlLower, "bilibili.com") {
+		platform = "bilibili"
+	}
+
+	// 5. Send MP4 and GIF
+	mp4File, err := os.Open(result.FilePath)
+	if err != nil {
+		log.Printf("Failed to open cut MP4 for sending: %v", err)
+		return
+	}
+	defer mp4File.Close()
+
+	// Gửi tin nhắn text thông tin riêng biệt để user dễ forward video sạch
+	infoText := fmt.Sprintf("✅ <b>Cắt phân đoạn thành công!</b>\n🎬 %s\n⏱ Khoảng: <code>%.0f-%.0fs</code> (độ dài: <code>%.0fs</code>)",
+		html.EscapeString(result.Title), start, end, duration)
+
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      infoText,
+		ParseMode: models.ParseModeHTML,
+	})
+
+	// Gửi Video
+	var videoMsg *models.Message
+	videoMsg, err = b.SendVideo(ctx, &bot.SendVideoParams{
+		ChatID: chatID,
+		Video: &models.InputFileUpload{
+			Filename: filepath.Base(result.FilePath),
+			Data:     mp4File,
+		},
+	})
+	if err != nil {
+		s.LogError("Gửi clip MP4 cắt thất bại: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Không thể gửi clip MP4 qua Telegram.",
+		})
+	}
+
+	// Gửi GIF (Telegram Animation)
+	if _, err := os.Stat(gifPath); err == nil {
+		gifFile, err := os.Open(gifPath)
+		if err == nil {
+			defer gifFile.Close()
+			_, err = b.SendAnimation(ctx, &bot.SendAnimationParams{
+				ChatID: chatID,
+				Animation: &models.InputFileUpload{
+					Filename: filepath.Base(gifPath),
+					Data:     gifFile,
+				},
+			})
+			if err != nil {
+				s.LogError("Gửi ảnh động GIF thất bại: %v", err)
+			}
+		}
+	}
+
+	// Xóa tin nhắn trạng thái
+	b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+		ChatID:    chatID,
+		MessageID: statusMsg.ID,
+	})
+
+	// Lưu lịch sử tải
+	if videoMsg != nil && videoMsg.Video != nil {
+		history := &storage.DownloadHistory{
+			UserID:   userID,
+			ChatID:   chatID,
+			URL:      videoURL,
+			Platform: platform,
+			Title:    result.Title,
+			Format:   "mp4",
+			FileSize: result.FileSize,
+			FilePath: result.FilePath,
+			FileID:   videoMsg.Video.FileID,
+		}
+		if err := s.db.SaveDownload(history); err != nil {
+			log.Printf("Failed to save cut history: %v", err)
+		}
 	}
 }

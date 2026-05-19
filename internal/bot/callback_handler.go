@@ -32,6 +32,18 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		return
 	}
 
+	if data == "cancel_cut" {
+		s.waitingForCutMu.Lock()
+		delete(s.waitingForCut, userID)
+		s.waitingForCutMu.Unlock()
+
+		b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
+		return
+	}
+
 	if strings.HasPrefix(data, "img:") {
 		s.handleImageCallback(ctx, b, callback)
 		return
@@ -39,6 +51,11 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 
 	if strings.HasPrefix(data, "adm:") {
 		s.handleAdminCallback(ctx, b, callback)
+		return
+	}
+
+	if strings.HasPrefix(data, "cut:") {
+		s.handleCutCallback(ctx, b, callback)
 		return
 	}
 
@@ -191,3 +208,60 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		})
 	}
 }
+
+func (s *BotServer) handleCutCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+	userID := callback.From.ID
+	data := callback.Data
+
+	urlHash := strings.TrimPrefix(data, "cut:")
+	videoURL, exists := s.getURL(urlHash)
+	if !exists {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Phiên làm việc đã hết hạn. Vui lòng gửi lại link video.",
+		})
+		b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
+		return
+	}
+
+	// Đưa user vào trạng thái chờ nhập timestamp
+	s.waitingForCutMu.Lock()
+	s.waitingForCut[userID] = videoURL
+	s.waitingForCutMu.Unlock()
+
+	// Cập nhật tin nhắn hướng dẫn
+	text := `✂️ <b>Chế độ Cắt Clip & Tạo GIF</b>
+
+Vui lòng gửi khoảng thời gian bạn muốn cắt.
+Định dạng: <code>phút:giây-phút:giây</code> (hoặc số giây trực tiếp).
+
+Ví dụ:
+• <code>0:10-0:40</code> (Cắt từ giây thứ 10 đến 40)
+• <code>10-40</code> (Cắt từ giây thứ 10 đến 40)
+• <code>1:20-2:10</code> (Cắt từ 1 phút 20s đến 2 phút 10s)
+
+<i>Lưu ý: Thời lượng cắt tối đa là 60 giây.</i>`
+
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+		Text:      text,
+		ParseMode: models.ParseModeHTML,
+		ReplyMarkup: &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{
+						Text:         "❌ Hủy",
+						CallbackData: "cancel_cut",
+					},
+				},
+			},
+		},
+	})
+}
+

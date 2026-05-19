@@ -22,6 +22,14 @@ func BuildFormatKeyboard(urlHash string) *models.InlineKeyboardMarkup {
 		})
 	}
 
+	// Add Cut Clip button
+	rows = append(rows, []models.InlineKeyboardButton{
+		{
+			Text:         "✂️ Cắt Clip & GIF (Max 60s)",
+			CallbackData: fmt.Sprintf("cut:%s", urlHash),
+		},
+	})
+
 	// Add Cancel button
 	rows = append(rows, []models.InlineKeyboardButton{
 		{

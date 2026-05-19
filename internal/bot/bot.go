@@ -9,6 +9,7 @@ import (
 	"download-bot/internal/storage"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,6 +39,8 @@ type BotServer struct {
 	activeDownloadsMu sync.RWMutex
 	imageSessions     map[int64]*ImageSession
 	imageSessionsMu   sync.RWMutex
+	waitingForCut     map[int64]string
+	waitingForCutMu   sync.Mutex
 }
 
 func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
@@ -56,6 +59,7 @@ func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
 		logHub:          NewLogHub(),
 		activeDownloads: make(map[string]*QueueItem),
 		imageSessions:   make(map[int64]*ImageSession),
+		waitingForCut:   make(map[int64]string),
 	}
 
 	// Try pre-populating the cache from SQLite
@@ -113,12 +117,42 @@ func (s *BotServer) routeUpdate(ctx context.Context, b *bot.Bot, update *models.
 			return
 		}
 
-		text := update.Message.Text
+		text := strings.TrimSpace(update.Message.Text)
+		userID := update.Message.From.ID
 
 		// Check if it's a command
 		if len(text) > 0 && text[0] == '/' {
 			s.handleCommand(ctx, b, update.Message)
 			return
+		}
+
+		// Check if user is in waitingForCut state
+		s.waitingForCutMu.Lock()
+		videoURLForCut, isWaiting := s.waitingForCut[userID]
+		s.waitingForCutMu.Unlock()
+
+		if isWaiting && text != "" {
+			// Clear waiting state
+			s.waitingForCutMu.Lock()
+			delete(s.waitingForCut, userID)
+			s.waitingForCutMu.Unlock()
+
+			// Call handler to slice the video
+			s.handleCutProcess(ctx, b, update.Message, videoURLForCut, text)
+			return
+		}
+
+		// Try parsing: <URL> <timestamp> (e.g. "https://youtu.be/... 10-30")
+		parts := strings.Fields(text)
+		if len(parts) >= 2 {
+			urlPart := parts[0]
+			rangePart := parts[1]
+
+			cleanedURL, err := CleanURL(urlPart)
+			if err == nil && s.isValidURL(cleanedURL) {
+				s.handleCutProcess(ctx, b, update.Message, cleanedURL, rangePart)
+				return
+			}
 		}
 
 		// Otherwise check if it's a valid video URL
