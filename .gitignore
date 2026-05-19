@@ -15,8 +15,6 @@ check_bin
 
 # Runtime downloaded files & cache directories
 downloads/
-cache/
-
 # SQLite Database files
 *.db
 *.db-journal
