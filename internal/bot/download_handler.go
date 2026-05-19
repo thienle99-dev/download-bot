@@ -480,3 +480,127 @@ func (s *BotServer) handleCutProcess(ctx context.Context, b *bot.Bot, msg *model
 		}
 	}
 }
+
+func (s *BotServer) handleSubtitleDownload(ctx context.Context, b *bot.Bot, chatID int64, userID int64, videoURL string, lang string, downloadType string) {
+	// 1. Send status message
+	statusMsg, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: chatID,
+		Text:   fmt.Sprintf("⏳ Đang tải phụ đề [%s]...", lang),
+	})
+	if err != nil {
+		log.Printf("Failed to send subtitle status: %v", err)
+		return
+	}
+
+	// 2. Download Subtitle (.srt)
+	subPath, err := s.dl.DownloadSubtitle(ctx, videoURL, lang)
+	if err != nil {
+		s.LogError("Tải phụ đề [%s] thất bại: %v", lang, err)
+		b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+			Text:      fmt.Sprintf("❌ Tải phụ đề [%s] thất bại. Có thể video không cung cấp phụ đề này.", lang),
+		})
+		return
+	}
+	defer os.Remove(subPath) // Cleanup srt file from VPS after function returns
+
+	// Helper to send SRT file
+	sendSRT := func() bool {
+		file, err := os.Open(subPath)
+		if err != nil {
+			log.Printf("Failed to open SRT file: %v", err)
+			return false
+		}
+		defer file.Close()
+
+		_, err = b.SendDocument(ctx, &bot.SendDocumentParams{
+			ChatID: chatID,
+			Document: &models.InputFileUpload{
+				Filename: filepath.Base(subPath),
+				Data:     file,
+			},
+			Caption: fmt.Sprintf("📝 Phụ đề [%s] của video.", lang),
+		})
+		if err != nil {
+			s.LogError("Gửi file phụ đề thất bại: %v", err)
+			return false
+		}
+		return true
+	}
+
+	if downloadType == "srt" {
+		b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+			Text:      "📤 Đang gửi file phụ đề lên Telegram...",
+		})
+
+		if sendSRT() {
+			b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+				ChatID:    chatID,
+				MessageID: statusMsg.ID,
+			})
+		} else {
+			b.EditMessageText(ctx, &bot.EditMessageTextParams{
+				ChatID:    chatID,
+				MessageID: statusMsg.ID,
+				Text:      "❌ Không thể gửi file phụ đề .srt lên Telegram.",
+			})
+		}
+		return
+	}
+
+	// Case: both (Video + Subtitle)
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: statusMsg.ID,
+		Text:      "⏳ Đang tải file video chất lượng tốt nhất...",
+	})
+
+	// Download Video format option "best"
+	bestFormat := downloader.AvailableFormats[0] // ID: "best"
+	result, err := s.dl.Download(ctx, videoURL, bestFormat, func(percent float64) {
+		// Update progress info periodically if needed
+	})
+	if err != nil {
+		s.LogError("Tải video thất bại trong tiến trình subtitle: %v", err)
+		b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+			Text:      "❌ Tải video thất bại. Tuy nhiên bạn có thể thử chỉ tải phụ đề riêng.",
+		})
+		return
+	}
+	defer os.Remove(result.FilePath) // Cleanup video after sending
+
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: statusMsg.ID,
+		Text:      "📤 Đang gửi video và phụ đề lên Telegram...",
+	})
+
+	// Determine platform name
+	platform := "youtube"
+	urlLower := strings.ToLower(videoURL)
+	if strings.Contains(urlLower, "tiktok.com") || strings.Contains(urlLower, "douyin.com") {
+		platform = "tiktok"
+	} else if strings.Contains(urlLower, "instagram.com") {
+		platform = "instagram"
+	} else if strings.Contains(urlLower, "facebook.com") || strings.Contains(urlLower, "fb.watch") {
+		platform = "facebook"
+	}
+
+	// 1. Upload Video & Save to Database / Cache
+	s.uploadAndSave(ctx, b, chatID, userID, videoURL, result.Title, platform, bestFormat.Extension, result.FilePath)
+
+	// 2. Upload Subtitle file
+	sendSRT()
+
+	// Cleanup the status message
+	b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+		ChatID:    chatID,
+		MessageID: statusMsg.ID,
+	})
+}
+

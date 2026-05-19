@@ -202,6 +202,59 @@ func (d *Downloader) Download(ctx context.Context, url string, option FormatOpti
 	}, nil
 }
 
+// DownloadSubtitle runs yt-dlp to download and convert the subtitle to .srt.
+func (d *Downloader) DownloadSubtitle(ctx context.Context, url string, lang string) (string, error) {
+	select {
+	case d.sem <- struct{}{}:
+		defer func() { <-d.sem }()
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+
+	info, err := d.Probe(ctx, url)
+	if err != nil {
+		return "", err
+	}
+
+	safeTitle := cleanFilename(info.Title)
+	if safeTitle == "" {
+		safeTitle = "sub_" + info.ID
+	}
+
+	outputTemplate := filepath.Join(d.downloadDir, fmt.Sprintf("%s_%s.%%(ext)s", safeTitle, lang))
+
+	args := []string{
+		"--no-playlist",
+		"--no-warnings",
+		"--skip-download",
+		"--write-subs",
+		"--write-auto-subs",
+		"--sub-lang", lang,
+		"--sub-format", "srt/vtt/ass/best",
+		"--convert-subs", "srt",
+		"-o", outputTemplate,
+		url,
+	}
+
+	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to download subtitle: %w", err)
+	}
+
+	expectedFile := filepath.Join(d.downloadDir, fmt.Sprintf("%s_%s.srt", safeTitle, lang))
+	if _, err := os.Stat(expectedFile); err == nil {
+		return expectedFile, nil
+	}
+
+	pattern := filepath.Join(d.downloadDir, fmt.Sprintf("%s_%s.*", safeTitle, lang))
+	matches, _ := filepath.Glob(pattern)
+	if len(matches) > 0 {
+		return matches[0], nil
+	}
+
+	return "", fmt.Errorf("subtitle file not found after download")
+}
+
 func removeAccents(s string) string {
 	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 	result, _, _ := transform.String(t, s)

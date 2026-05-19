@@ -4,6 +4,7 @@ import (
 	"context"
 	"download-bot/internal/downloader"
 	"fmt"
+	"html"
 	"log"
 	"math"
 	"strings"
@@ -56,6 +57,26 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 
 	if strings.HasPrefix(data, "cut:") {
 		s.handleCutCallback(ctx, b, callback)
+		return
+	}
+
+	if strings.HasPrefix(data, "sub:") {
+		s.handleSubtitleLanguageSelection(ctx, b, callback)
+		return
+	}
+
+	if strings.HasPrefix(data, "lang:") {
+		s.handleSubtitleTypeSelection(ctx, b, callback)
+		return
+	}
+
+	if strings.HasPrefix(data, "dlsub:") {
+		s.handleSubtitleDownloadTrigger(ctx, b, callback)
+		return
+	}
+
+	if strings.HasPrefix(data, "back:") {
+		s.handleBackToFormats(ctx, b, callback)
 		return
 	}
 
@@ -262,6 +283,211 @@ Ví dụ:
 				},
 			},
 		},
+	})
+}
+
+func (s *BotServer) handleSubtitleLanguageSelection(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+	data := callback.Data
+
+	urlHash := strings.TrimPrefix(data, "sub:")
+	videoURL, exists := s.getURL(urlHash)
+	if !exists {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Phiên làm việc đã hết hạn. Vui lòng gửi lại link video.",
+		})
+		b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
+		return
+	}
+
+	// Show loading status
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+		Text:      "🔍 Đang kiểm tra danh sách phụ đề khả dụng từ video...",
+	})
+
+	info, err := s.dl.Probe(ctx, videoURL)
+	if err != nil {
+		b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Text:      "❌ Không thể phân tích thông tin phụ đề của video này.",
+			ReplyMarkup: &models.InlineKeyboardMarkup{
+				InlineKeyboard: [][]models.InlineKeyboardButton{
+					{
+						{
+							Text:         "⬅️ Quay lại",
+							CallbackData: fmt.Sprintf("back:%s", urlHash),
+						},
+					},
+				},
+			},
+		})
+		return
+	}
+
+	langs := info.GetAvailableLanguages()
+	if len(langs) == 0 {
+		b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Text:      "ℹ️ Video này không có phụ đề khả dụng (kể cả phụ đề tự dịch và tự động tạo).",
+			ReplyMarkup: &models.InlineKeyboardMarkup{
+				InlineKeyboard: [][]models.InlineKeyboardButton{
+					{
+						{
+							Text:         "⬅️ Quay lại",
+							CallbackData: fmt.Sprintf("back:%s", urlHash),
+						},
+					},
+				},
+			},
+		})
+		return
+	}
+
+	text := fmt.Sprintf("📝 <b>Danh sách Phụ đề khả dụng</b>\n🎬 %s\n\nVui lòng chọn ngôn ngữ phụ đề bạn muốn tải:", html.EscapeString(info.Title))
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:      chatID,
+		MessageID:   messageID,
+		Text:        text,
+		ParseMode:   models.ParseModeHTML,
+		ReplyMarkup: BuildSubLanguageKeyboard(urlHash, langs),
+	})
+}
+
+func (s *BotServer) handleSubtitleTypeSelection(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+	data := callback.Data
+
+	// format: lang:[lang]:[urlHash]
+	parts := strings.Split(data, ":")
+	if len(parts) < 3 {
+		return
+	}
+	lang := parts[1]
+	urlHash := parts[2]
+
+	videoURL, exists := s.getURL(urlHash)
+	if !exists {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Phiên làm việc đã hết hạn. Vui lòng gửi lại link video.",
+		})
+		b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
+		return
+	}
+
+	text := fmt.Sprintf("📝 <b>Tải Phụ đề ngôn ngữ: %s</b>\n🔗 %s\n\nBạn muốn tải phụ đề này như thế nào?", lang, videoURL)
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:      chatID,
+		MessageID:   messageID,
+		Text:        text,
+		ParseMode:   models.ParseModeHTML,
+		ReplyMarkup: BuildSubDownloadTypeKeyboard(urlHash, lang),
+	})
+}
+
+func (s *BotServer) handleSubtitleDownloadTrigger(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+	userID := callback.From.ID
+	data := callback.Data
+
+	// format: dlsub:[downloadType]:[lang]:[urlHash]
+	parts := strings.Split(data, ":")
+	if len(parts) < 4 {
+		return
+	}
+	downloadType := parts[1]
+	lang := parts[2]
+	urlHash := parts[3]
+
+	videoURL, exists := s.getURL(urlHash)
+	if !exists {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Phiên làm việc đã hết hạn. Vui lòng gửi lại link video.",
+		})
+		b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
+		return
+	}
+
+	// Delete choice keyboard to clear UI
+	b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+	})
+
+	go s.handleSubtitleDownload(ctx, b, chatID, userID, videoURL, lang, downloadType)
+}
+
+func (s *BotServer) handleBackToFormats(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+	data := callback.Data
+
+	urlHash := strings.TrimPrefix(data, "back:")
+	videoURL, exists := s.getURL(urlHash)
+	if !exists {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Phiên làm việc đã hết hạn. Vui lòng gửi lại link video.",
+		})
+		b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
+		return
+	}
+
+	// Reconstruct probe/format choosing interface
+	info, err := s.dl.Probe(ctx, videoURL)
+	if err != nil {
+		b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Text:      "❌ Không thể tải lại thông tin video.",
+		})
+		return
+	}
+
+	sizeMB := 0.0
+	// Try finding best format info size
+	for _, f := range info.Formats {
+		if f.Filesize > 0 {
+			sizeMB = float64(f.Filesize) / (1024 * 1024)
+			break
+		}
+	}
+
+	durationStr := fmt.Sprintf("%.0f giây", info.Duration)
+	if info.Duration >= 60 {
+		durationStr = fmt.Sprintf("%.0f phút %.0f giây", info.Duration/60, float64(int(info.Duration)%60))
+	}
+
+	text := fmt.Sprintf("🎬 <b>%s</b>\n\n⏱ Thời lượng: %s\n📦 Dung lượng ước tính: %.2f MB\n\nChọn chất lượng hoặc định dạng bạn muốn tải xuống:",
+		html.EscapeString(info.Title), durationStr, sizeMB)
+
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:      chatID,
+		MessageID:   messageID,
+		Text:        text,
+		ParseMode:   models.ParseModeHTML,
+		ReplyMarkup: BuildFormatKeyboard(urlHash),
 	})
 }
 
