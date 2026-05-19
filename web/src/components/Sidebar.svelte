@@ -12,7 +12,8 @@
     { path: "/users", label: "Người Dùng", icon: "👥" },
     { path: "/logs", label: "Logs Hệ Thống", icon: "📝" },
     { path: "/broadcast", label: "Phát Thông Báo", icon: "📢" },
-    { path: "/config", label: "Cấu Hình", icon: "⚙️" },
+    { path: "/ai-config", label: "Cấu Hình AI", icon: "🤖" },
+    { path: "/config", label: "Cấu Hinh VPS", icon: "⚙️" },
   ];
 
   function closeSidebar() {

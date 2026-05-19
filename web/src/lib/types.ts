@@ -50,3 +50,12 @@ export interface LogMessage {
   level: 'INFO' | 'WARN' | 'ERROR';
   message: string;
 }
+
+export interface AIConfig {
+  base_url: string;
+  api_key: string;
+  model: string;
+  system_prompt: string;
+  enabled: boolean;
+}
+

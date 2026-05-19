@@ -14,6 +14,9 @@ import (
 	"sync"
 	"time"
 
+	aiPkg "download-bot/internal/ai"
+	"download-bot/internal/storage"
+
 	"github.com/go-telegram/bot"
 )
 
@@ -66,6 +69,10 @@ func (s *BotServer) RegisterWebRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/dashboard/api/broadcast", s.handleBroadcastAPI)
 	mux.HandleFunc("/dashboard/api/config", s.handleConfigAPI)
 	mux.HandleFunc("/dashboard/api/queue", s.handleQueueAPI)
+
+	// AI configuration endpoints
+	mux.HandleFunc("/dashboard/api/ai/config", s.handleAIConfigAPI)
+	mux.HandleFunc("/dashboard/api/ai/models", s.handleAIModelsAPI)
 
 	log.Printf("----------------------------------------------------------------")
 	log.Printf("🚀 Dashboard: %s/dashboard/", s.cfg.PublicURL)
@@ -391,4 +398,88 @@ func (s *BotServer) handleQueueAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = json.NewEncoder(w).Encode(queue)
+}
+
+// handleAIConfigAPI handles GET (read config) and POST (write config) for AI settings.
+func (s *BotServer) handleAIConfigAPI(w http.ResponseWriter, r *http.Request) {
+	if s.enableCORS(w, r) {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if !s.authCheck(w, r) {
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := s.db.GetAIConfig()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		body, _ := storage.MarshalAIConfig(cfg, true) // Mask API key in response
+		w.Write(body)
+
+	case http.MethodPost:
+		var incoming storage.AIConfig
+		if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON body"})
+			return
+		}
+
+		// If API key is "***" (masked), preserve the existing key
+		if incoming.APIKey == "***" {
+			existing, err := s.db.GetAIConfig()
+			if err == nil {
+				incoming.APIKey = existing.APIKey
+			}
+		}
+
+		if err := s.db.SetAIConfig(incoming); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		s.LogInfo("AI config updated: model=%s enabled=%v", incoming.Model, incoming.Enabled)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAIModelsAPI calls /v1/models on the configured base URL and returns the model list.
+func (s *BotServer) handleAIModelsAPI(w http.ResponseWriter, r *http.Request) {
+	if s.enableCORS(w, r) {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if !s.authCheck(w, r) {
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	cfg, err := s.db.GetAIConfig()
+	if err != nil || cfg.BaseURL == "" || cfg.APIKey == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "AI base_url and api_key must be configured first"})
+		return
+	}
+
+	ctx := r.Context()
+	client := aiPkg.NewClient(cfg.BaseURL, cfg.APIKey, "")
+	models, err := client.ListModels(ctx)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"models": models})
 }

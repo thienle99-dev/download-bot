@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"crypto/md5"
+	"download-bot/internal/ai"
 	"download-bot/internal/cache"
 	"download-bot/internal/config"
 	"download-bot/internal/downloader"
@@ -41,6 +42,7 @@ type BotServer struct {
 	imageSessionsMu   sync.RWMutex
 	waitingForCut     map[int64]string
 	waitingForCutMu   sync.Mutex
+	aiSessions        *ai.SessionManager
 }
 
 func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
@@ -60,6 +62,7 @@ func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
 		activeDownloads: make(map[string]*QueueItem),
 		imageSessions:   make(map[int64]*ImageSession),
 		waitingForCut:   make(map[int64]string),
+		aiSessions:      ai.NewSessionManager(),
 	}
 
 	// Try pre-populating the cache from SQLite
@@ -87,6 +90,7 @@ func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
 func (s *BotServer) Start(ctx context.Context) {
 	log.Println("Starting Telegram Bot listener...")
 	go s.StartSessionCleaner(ctx)
+	go s.aiSessions.CleanExpiredLoop(ctx, 30*time.Minute)
 	s.StartCleanupScheduler(ctx)
 	s.tgBot.Start(ctx)
 }

@@ -64,6 +64,23 @@ func (s *BotServer) handleCommand(ctx context.Context, b *bot.Bot, msg *models.M
 		} else {
 			s.sendHelpMessage(ctx, b, msg.Chat.ID, msg.From.ID)
 		}
+	case "/ai":
+		question := strings.TrimSpace(strings.TrimPrefix(msg.Text, cmd))
+		if question == "" {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID:    msg.Chat.ID,
+				ParseMode: models.ParseModeHTML,
+				Text:      "🤖 <b>Trợ lý AI</b>\n\nCách dùng: <code>/ai [câu hỏi của bạn]</code>\n\nVí dụ: <code>/ai Thủ đô của Việt Nam là gì?</code>\n\nDùng <code>/ai_reset</code> để xóa lịch sử hội thoại.",
+			})
+		} else {
+			go s.handleAIChat(ctx, b, msg, question)
+		}
+	case "/ai_reset":
+		s.aiSessions.Clear(msg.From.ID)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "✅ Đã xóa lịch sử hội thoại AI của bạn. Phiên chat mới bắt đầu!",
+		})
 	default:
 		s.sendHelpMessage(ctx, b, msg.Chat.ID, msg.From.ID)
 	}

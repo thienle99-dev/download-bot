@@ -15,6 +15,7 @@
   import Logs from "./pages/Logs.svelte";
   import Broadcast from "./pages/Broadcast.svelte";
   import Config from "./pages/Config.svelte";
+  import AIConfig from "./pages/AIConfig.svelte";
 
   // Define SPA routes
   const routes = {
@@ -27,6 +28,7 @@
     "/logs": Logs,
     "/broadcast": Broadcast,
     "/config": Config,
+    "/ai-config": AIConfig,
   };
 
   let sidebarOpen = false;

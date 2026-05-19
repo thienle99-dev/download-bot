@@ -1,4 +1,4 @@
-import type { Stats, DownloadHistory, UserStat, SystemConfig, QueueItem } from './types';
+import type { Stats, DownloadHistory, UserStat, SystemConfig, QueueItem, AIConfig } from './types';
 
 const isDev = import.meta.env.DEV;
 export const BASE_URL = isDev ? 'http://localhost:8080/dashboard/api' : '/dashboard/api';
@@ -62,4 +62,9 @@ export const api = {
   },
 
   broadcast: (message: string) => apiRequest<{ success: number; failed: number; total: number }>('/broadcast', 'POST', { message }),
+
+  getAIConfig: () => apiRequest<AIConfig>('/ai/config'),
+  saveAIConfig: (config: AIConfig) => apiRequest<{ status: string }>('/ai/config', 'POST', config),
+  getAIModels: () => apiRequest<{ models: string[] }>('/ai/models'),
 };
+
