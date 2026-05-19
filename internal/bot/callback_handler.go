@@ -90,6 +90,11 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		return
 	}
 
+	if strings.HasPrefix(data, "web:") {
+		s.handleWebCallback(ctx, b, callback)
+		return
+	}
+
 	if strings.HasPrefix(data, "back:") {
 		s.handleBackToFormats(ctx, b, callback)
 		return
@@ -634,4 +639,42 @@ func (s *BotServer) handleAIModelSelection(ctx context.Context, b *bot.Bot, call
 		ChatID:    chatID,
 		MessageID: messageID,
 	})
+}
+
+func (s *BotServer) handleWebCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+	userID := callback.From.ID
+	data := callback.Data
+
+	// format: web:summary:[urlHash]
+	parts := strings.Split(data, ":")
+	if len(parts) < 3 {
+		return
+	}
+	action := parts[1]
+	urlHash := parts[2]
+
+	targetURL, exists := s.getURL(urlHash)
+	if !exists {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Phiên làm việc đã hết hạn. Vui lòng gửi lại link trang web.",
+		})
+		_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
+		return
+	}
+
+	if action == "summary" {
+		// Xóa keyboard lựa chọn để tránh bấm lại
+		_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
+
+		go s.handleWebSummary(ctx, b, chatID, userID, targetURL)
+	}
 }

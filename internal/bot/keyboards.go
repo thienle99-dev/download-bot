@@ -221,4 +221,24 @@ func (s *BotServer) BuildAIModelKeyboard(modelsList []string) *models.InlineKeyb
 	}
 }
 
+// BuildWebSummaryKeyboard creates inline keyboard containing options to summarize target URL.
+func BuildWebSummaryKeyboard(urlHash string) *models.InlineKeyboardMarkup {
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{
+					Text:         "📝 Tóm tắt bài viết bằng AI",
+					CallbackData: fmt.Sprintf("web:summary:%s", urlHash),
+				},
+			},
+			{
+				{
+					Text:         "❌ Hủy",
+					CallbackData: "cancel",
+				},
+			},
+		},
+	}
+}
+
 

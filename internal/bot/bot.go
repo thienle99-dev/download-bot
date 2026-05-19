@@ -179,6 +179,17 @@ func (s *BotServer) routeUpdate(ctx context.Context, b *bot.Bot, update *models.
 			return
 		}
 
+		// Check if it's a regular website link for AI summarization
+		if err == nil && (strings.HasPrefix(cleanedURL, "http://") || strings.HasPrefix(cleanedURL, "https://")) {
+			urlHash := s.registerURL(cleanedURL)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID:      update.Message.Chat.ID,
+				Text:        "📰 Phát hiện liên kết trang web. Bạn có muốn tóm tắt nội dung bài viết này bằng AI không?",
+				ReplyMarkup: BuildWebSummaryKeyboard(urlHash),
+			})
+			return
+		}
+
 		// If AI Chat mode is enabled, route normal text messages to AI
 		s.aiChatMu.RLock()
 		chatEnabled := s.aiChatEnabled[userID]
