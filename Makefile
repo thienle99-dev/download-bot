@@ -3,6 +3,12 @@
 dev:
 	go run ./cmd/bot
 
+web-dev:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build
+
 build:
 	docker compose -f docker/docker-compose.yml build
 
