@@ -15,6 +15,7 @@ type Config struct {
 	MaxConcurrent int
 	PublicURL     string // URL to serve files (e.g. http://vps-ip:8080)
 	ServerPort    string // Local port to run HTTP file server (e.g. :8080)
+	AdminPassword string // Dashboard access password
 }
 
 func Load() *Config {
@@ -50,6 +51,11 @@ func Load() *Config {
 		serverPort = ":8080"
 	}
 
+	adminPassword := os.Getenv("ADMIN_PASSWORD")
+	if adminPassword == "" {
+		adminPassword = "admin123"
+	}
+
 	maxConcurrentStr := os.Getenv("MAX_CONCURRENT")
 	maxConcurrent := 3
 	if maxConcurrentStr != "" {
@@ -74,5 +80,6 @@ func Load() *Config {
 		MaxConcurrent: maxConcurrent,
 		PublicURL:     publicURL,
 		ServerPort:    serverPort,
+		AdminPassword: adminPassword,
 	}
 }
