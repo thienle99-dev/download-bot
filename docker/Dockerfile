@@ -9,6 +9,9 @@ RUN npm run build
 # Stage 2: Build Go application
 FROM golang:1.26-alpine AS go-builder
 WORKDIR /app
+ENV GO111MODULE=on
+# Ensure git is available for fetching modules
+RUN apk add --no-cache git
 COPY go.mod go.sum ./
 RUN go mod download
 # Chỉ copy mã nguồn Go, tránh copy thư mục tải xuống hoặc web gây phình to Context
