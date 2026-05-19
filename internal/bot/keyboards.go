@@ -261,5 +261,33 @@ func BuildReplyKeyboard(isAdmin bool) *models.ReplyKeyboardMarkup {
 	}
 }
 
+// BuildHistoryKeyboard creates inline keyboard containing navigation buttons for history pagination.
+func BuildHistoryKeyboard(page int, totalPages int) *models.InlineKeyboardMarkup {
+	var row []models.InlineKeyboardButton
+
+	if page > 1 {
+		row = append(row, models.InlineKeyboardButton{
+			Text:         "◀️ Trước",
+			CallbackData: fmt.Sprintf("history:page:%d", page-1),
+		})
+	}
+
+	row = append(row, models.InlineKeyboardButton{
+		Text:         fmt.Sprintf("Trang %d/%d", page, totalPages),
+		CallbackData: "history:noop",
+	})
+
+	if page < totalPages {
+		row = append(row, models.InlineKeyboardButton{
+			Text:         "Sau ▶️",
+			CallbackData: fmt.Sprintf("history:page:%d", page+1),
+		})
+	}
+
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{row},
+	}
+}
+
 
 

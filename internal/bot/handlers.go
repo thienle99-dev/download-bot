@@ -175,26 +175,60 @@ func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int6
 }
 
 func (s *BotServer) sendHistoryMessage(ctx context.Context, b *bot.Bot, userID int64, chatID int64) {
-	history, err := s.db.GetUserHistory(userID, 10)
+	s.sendHistoryPageMessage(ctx, b, userID, chatID, 1, 0)
+}
+
+func (s *BotServer) sendHistoryPageMessage(ctx context.Context, b *bot.Bot, userID int64, chatID int64, page int, editMessageID int) {
+	pageSize := 5
+	offset := (page - 1) * pageSize
+
+	totalCount, err := s.db.GetUserHistoryCount(userID)
 	if err != nil {
-		log.Printf("Failed to fetch user history: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "❌ Đã xảy ra lỗi khi lấy lịch sử tải. Vui lòng thử lại sau.",
-		})
+		log.Printf("Failed to count user history: %v", err)
+		totalCount = 0
+	}
+
+	history, err := s.db.GetUserHistoryPage(userID, offset, pageSize)
+	if err != nil {
+		log.Printf("Failed to fetch user history page: %v", err)
+		if editMessageID > 0 {
+			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+				ChatID:    chatID,
+				MessageID: editMessageID,
+				Text:      "❌ Đã xảy ra lỗi khi lấy lịch sử tải. Vui lòng thử lại sau.",
+			})
+		} else {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Đã xảy ra lỗi khi lấy lịch sử tải. Vui lòng thử lại sau.",
+			})
+		}
 		return
 	}
 
-	if len(history) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "📋 Lịch sử tải của bạn hiện đang trống. Hãy gửi link video để tải ngay nhé!",
-		})
+	if len(history) == 0 && page == 1 {
+		if editMessageID > 0 {
+			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+				ChatID:    chatID,
+				MessageID: editMessageID,
+				Text:      "📋 Lịch sử tải của bạn hiện đang trống. Hãy gửi link video để tải ngay nhé!",
+			})
+		} else {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "📋 Lịch sử tải của bạn hiện đang trống. Hãy gửi link video để tải ngay nhé!",
+			})
+		}
 		return
+	}
+
+	totalPages := (totalCount + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1
 	}
 
 	var sb strings.Builder
-	sb.WriteString("📋 <b>Lịch sử 10 lượt tải gần nhất của bạn:</b>\n\n")
+	sb.WriteString(fmt.Sprintf("📋 <b>Lịch sử tải của bạn (Trang %d/%d):</b>\n\n", page, totalPages))
 
 	for i, h := range history {
 		// Clean and limit title length for presentation
@@ -209,18 +243,33 @@ func (s *BotServer) sendHistoryMessage(ctx context.Context, b *bot.Bot, userID i
 			typeIcon = "🎵"
 		}
 
-		sb.WriteString(fmt.Sprintf("%d. %s <b>%s</b>\n", i+1, typeIcon, html.EscapeString(title)))
+		itemIndex := offset + i + 1
+		sb.WriteString(fmt.Sprintf("%d. %s <b>%s</b>\n", itemIndex, typeIcon, html.EscapeString(title)))
 		sb.WriteString(fmt.Sprintf("   • Định dạng: <code>%s</code> | Dung lượng: <code>%.2f MB</code>\n", h.Format, sizeMB))
-		sb.WriteString(fmt.Sprintf("   • Nền tảng: <code>%s</code> | 📅 <code>%s</code>\n\n", h.Platform, h.CreatedAt.Format("02-01-15:04")))
+		sb.WriteString(fmt.Sprintf("   • Nền tảng: <code>%s</code> | 📅 <code>%s</code>\n\n", h.Platform, h.CreatedAt.Format("02-01 15:04")))
 	}
 
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    chatID,
-		Text:      sb.String(),
-		ParseMode: models.ParseModeHTML,
-	})
+	keyboard := BuildHistoryKeyboard(page, totalPages)
+
+	if editMessageID > 0 {
+		_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:      chatID,
+			MessageID:   editMessageID,
+			Text:        sb.String(),
+			ParseMode:   models.ParseModeHTML,
+			ReplyMarkup: keyboard,
+		})
+	} else {
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      chatID,
+			Text:        sb.String(),
+			ParseMode:   models.ParseModeHTML,
+			ReplyMarkup: keyboard,
+		})
+	}
+
 	if err != nil {
-		log.Printf("Failed to send history message: %v", err)
+		log.Printf("Failed to send/edit history message: %v", err)
 	}
 }
 

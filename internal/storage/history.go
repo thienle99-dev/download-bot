@@ -24,14 +24,18 @@ func (db *DB) SaveDownload(h *DownloadHistory) error {
 }
 
 func (db *DB) GetUserHistory(userID int64, limit int) ([]DownloadHistory, error) {
+	return db.GetUserHistoryPage(userID, 0, limit)
+}
+
+func (db *DB) GetUserHistoryPage(userID int64, offset, limit int) ([]DownloadHistory, error) {
 	query := `
 	SELECT id, user_id, chat_id, url, platform, title, format, file_size, file_path, file_id, created_at
 	FROM download_history
 	WHERE user_id = ?
 	ORDER BY created_at DESC
-	LIMIT ?
+	LIMIT ? OFFSET ?
 	`
-	rows, err := db.Query(query, userID, limit)
+	rows, err := db.Query(query, userID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +62,13 @@ func (db *DB) GetUserHistory(userID int64, limit int) ([]DownloadHistory, error)
 		list = append(list, h)
 	}
 	return list, rows.Err()
+}
+
+func (db *DB) GetUserHistoryCount(userID int64) (int, error) {
+	query := "SELECT COUNT(id) FROM download_history WHERE user_id = ?"
+	var count int
+	err := db.QueryRow(query, userID).Scan(&count)
+	return count, err
 }
 
 // GetRecentByURL retrieves the most recent successful download of the same URL by the same user.

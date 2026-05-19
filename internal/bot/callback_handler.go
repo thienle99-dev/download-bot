@@ -32,6 +32,21 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		return
 	}
 
+	if strings.HasPrefix(data, "history:") {
+		if data == "history:noop" {
+			return
+		}
+		parts := strings.Split(data, ":")
+		if len(parts) == 3 && parts[1] == "page" {
+			var page int
+			_, err := fmt.Sscanf(parts[2], "%d", &page)
+			if err == nil && page > 0 {
+				go s.sendHistoryPageMessage(ctx, b, userID, chatID, page, messageID)
+			}
+		}
+		return
+	}
+
 	if data == "cancel_cut" {
 		s.waitingForCutMu.Lock()
 		delete(s.waitingForCut, userID)
