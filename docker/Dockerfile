@@ -3,7 +3,7 @@ FROM node:alpine AS web-builder
 WORKDIR /app
 RUN npm install -g pnpm
 COPY web/package.json web/pnpm-lock.yaml* ./
-RUN pnpm install
+RUN pnpm config set security-audit.audit false && pnpm install
 COPY web/ ./
 RUN pnpm run build
 
