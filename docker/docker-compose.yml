@@ -16,6 +16,7 @@ services:
       DOWNLOAD_DIR: "/data/downloads"
       CACHE_DIR: "/data/cache"
       MAX_CONCURRENT: "${MAX_CONCURRENT:-3}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin123}"
     ports:
       - "8080:8080"
     volumes:
