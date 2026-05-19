@@ -1,7 +1,7 @@
 # Binaries and executables
 bot_binary
 check_bin
-bot
+/bot
 *.exe
 *.exe~
 *.dll
