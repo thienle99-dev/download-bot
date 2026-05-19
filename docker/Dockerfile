@@ -12,7 +12,9 @@ FROM golang:1.26-alpine AS go-builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
-COPY . .
+# Chỉ copy mã nguồn Go, tránh copy thư mục tải xuống hoặc web gây phình to Context
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 # Optimize Go binary by stripping debug symbols
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/bot ./cmd/bot
 
