@@ -36,6 +36,8 @@ type BotServer struct {
 	logHub            *LogHub
 	activeDownloads   map[string]*QueueItem
 	activeDownloadsMu sync.RWMutex
+	imageSessions     map[int64]*ImageSession
+	imageSessionsMu   sync.RWMutex
 }
 
 func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
@@ -53,6 +55,7 @@ func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
 		urlMap:          make(map[string]string),
 		logHub:          NewLogHub(),
 		activeDownloads: make(map[string]*QueueItem),
+		imageSessions:   make(map[int64]*ImageSession),
 	}
 
 	// Try pre-populating the cache from SQLite
@@ -79,6 +82,7 @@ func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
 
 func (s *BotServer) Start(ctx context.Context) {
 	log.Println("Starting Telegram Bot listener...")
+	go s.StartSessionCleaner(ctx)
 	s.tgBot.Start(ctx)
 }
 
@@ -102,6 +106,12 @@ func (s *BotServer) routeUpdate(ctx context.Context, b *bot.Bot, update *models.
 
 	// Handle standard messages
 	if update.Message != nil {
+		// Handle photo messages (image processing feature)
+		if update.Message.Photo != nil && len(update.Message.Photo) > 0 {
+			s.handlePhoto(ctx, b, update.Message)
+			return
+		}
+
 		text := update.Message.Text
 
 		// Check if it's a command

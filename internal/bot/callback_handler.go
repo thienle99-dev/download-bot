@@ -32,6 +32,11 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		return
 	}
 
+	if strings.HasPrefix(data, "img:") {
+		s.handleImageCallback(ctx, b, callback)
+		return
+	}
+
 	if strings.HasPrefix(data, "dl:") {
 		parts := strings.Split(data, ":")
 		if len(parts) < 3 {
@@ -131,7 +136,7 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 
 		// Run Download
 		result, err := s.dl.Download(ctx, videoURL, selectedOption, onProgress)
-		
+
 		s.activeDownloadsMu.Lock()
 		delete(s.activeDownloads, queueID)
 		s.activeDownloadsMu.Unlock()
