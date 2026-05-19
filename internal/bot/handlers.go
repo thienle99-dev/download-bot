@@ -39,6 +39,8 @@ func (s *BotServer) handleCommand(ctx context.Context, b *bot.Bot, msg *models.M
 		s.sendHelpMessage(ctx, b, msg.Chat.ID)
 	case "/history":
 		s.sendHistoryMessage(ctx, b, msg.From.ID, msg.Chat.ID)
+	case "/clean":
+		s.handleCleanCommand(ctx, b, msg)
 	default:
 		s.sendHelpMessage(ctx, b, msg.Chat.ID)
 	}
@@ -73,12 +75,14 @@ func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int6
 
 • <b>Tải video/audio:</b> Gửi trực tiếp link video (YouTube/TikTok/Facebook/Instagram/Twitter...) vào chat.
 • <b>Xử lý ảnh:</b> Gửi 1 hoặc nhiều ảnh (album) vào chat, sau đó chọn thao tác nén/chuyển đổi định dạng để nhận file ZIP.
+• <b>Làm sạch link:</b> Gõ lệnh /clean &lt;link&gt; để loại bỏ các mã theo dõi khỏi liên kết của bạn.
 • <b>Lịch sử tải:</b> Gõ lệnh /history để xem lại 10 video bạn đã tải gần đây.
 • <b>Inline mode:</b> Gõ @username_bot &lt;link&gt; để chia sẻ video trực tiếp vào cuộc chat của bạn bè.
 
 <b>Các lệnh hiện có:</b>
 /start - Bắt đầu sử dụng bot
 /help - Hướng dẫn sử dụng
+/clean - Xóa mã theo dõi khỏi link
 /history - Xem lịch sử tải gần nhất`
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
@@ -140,3 +144,32 @@ func (s *BotServer) sendHistoryMessage(ctx context.Context, b *bot.Bot, userID i
 		log.Printf("Failed to send history message: %v", err)
 	}
 }
+
+func (s *BotServer) handleCleanCommand(ctx context.Context, b *bot.Bot, msg *models.Message) {
+	parts := strings.SplitN(msg.Text, " ", 2)
+	if len(parts) < 2 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:    msg.Chat.ID,
+			Text:      "⚠️ Vui lòng sử dụng cú pháp: <code>/clean &lt;link&gt;</code>",
+			ParseMode: models.ParseModeHTML,
+		})
+		return
+	}
+
+	targetURL := strings.TrimSpace(parts[1])
+	cleaned, err := CleanURL(targetURL)
+	if err != nil {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "❌ Link không hợp lệ hoặc không thể phân tích cú pháp.",
+		})
+		return
+	}
+
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    msg.Chat.ID,
+		Text:      fmt.Sprintf("🧹 <b>Link đã làm sạch:</b>\n<code>%s</code>", html.EscapeString(cleaned)),
+		ParseMode: models.ParseModeHTML,
+	})
+}
+

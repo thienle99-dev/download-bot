@@ -121,8 +121,9 @@ func (s *BotServer) routeUpdate(ctx context.Context, b *bot.Bot, update *models.
 		}
 
 		// Otherwise check if it's a valid video URL
-		if s.isValidURL(text) {
-			s.promptFormatSelection(ctx, b, update.Message, text)
+		cleanedURL, err := CleanURL(text)
+		if err == nil && s.isValidURL(cleanedURL) {
+			s.promptFormatSelection(ctx, b, update.Message, cleanedURL)
 			return
 		}
 
