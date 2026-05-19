@@ -6,7 +6,6 @@ import (
 	"html"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -50,22 +49,14 @@ func (s *BotServer) handleWebSummary(ctx context.Context, b *bot.Bot, chatID int
 	}
 
 	// 3. Load AI configuration
-	cfg, err := s.db.GetAIConfig()
-	if err != nil || !cfg.Enabled || cfg.BaseURL == "" || cfg.APIKey == "" {
+	cfg, err := s.GetActiveAIConfig()
+	if err != nil || !cfg.Enabled || cfg.BaseURL == "" || cfg.APIKey == "" || cfg.Model == "" {
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    chatID,
 			MessageID: statusMsg.ID,
 			Text:      "⚠️ Tính năng AI chưa được bật hoặc cấu hình chưa đầy đủ.",
 		})
 		return
-	}
-
-	// Fallback to env vars if necessary
-	if cfg.BaseURL == "" {
-		cfg.BaseURL = os.Getenv("OPEN_AI_URL")
-	}
-	if cfg.APIKey == "" {
-		cfg.APIKey = os.Getenv("OPEN_AI_KEY")
 	}
 
 	// 4. Update status message

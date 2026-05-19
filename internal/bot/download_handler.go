@@ -734,8 +734,8 @@ func (s *BotServer) handleVideoSummary(ctx context.Context, b *bot.Bot, chatID i
 	}
 
 	// 4. Load AI Config
-	cfg, err := s.db.GetAIConfig()
-	if err != nil || !cfg.Enabled || cfg.BaseURL == "" || cfg.APIKey == "" {
+	cfg, err := s.GetActiveAIConfig()
+	if err != nil || !cfg.Enabled || cfg.BaseURL == "" || cfg.APIKey == "" || cfg.Model == "" {
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    chatID,
 			MessageID: statusMsg.ID,

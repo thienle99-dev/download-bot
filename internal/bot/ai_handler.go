@@ -22,27 +22,10 @@ func (s *BotServer) handleAIChat(ctx context.Context, b *bot.Bot, msg *models.Me
 	chatID := msg.Chat.ID
 	userID := msg.From.ID
 
-	// 1. Load AI config from DB (with env var fallbacks for first-run)
-	cfg, err := s.db.GetAIConfig()
+	// 1. Load AI config
+	cfg, err := s.GetActiveAIConfig()
 	if err != nil {
-		s.LogError("GetAIConfig failed: %v", err)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "❌ Không thể tải cấu hình AI. Vui lòng thử lại sau.",
-		})
-		return
-	}
-
-	// Apply .env defaults if DB config is still empty
-	if cfg.BaseURL == "" {
-		if v := os.Getenv("OPEN_AI_URL"); v != "" {
-			cfg.BaseURL = v
-		}
-	}
-	if cfg.APIKey == "" {
-		if v := os.Getenv("OPEN_AI_KEY"); v != "" {
-			cfg.APIKey = v
-		}
+		s.LogError("Failed to get AI config: %v", err)
 	}
 
 	// Validate minimal required config
@@ -144,8 +127,8 @@ func (s *BotServer) handleAIVision(ctx context.Context, b *bot.Bot, msg *models.
 	}
 
 	// 2. Load AI config
-	cfg, err := s.db.GetAIConfig()
-	if err != nil || !cfg.Enabled || cfg.BaseURL == "" || cfg.APIKey == "" {
+	cfg, err := s.GetActiveAIConfig()
+	if err != nil || !cfg.Enabled || cfg.BaseURL == "" || cfg.APIKey == "" || cfg.Model == "" {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "⚠️ AI chưa được bật hoặc cấu hình chưa đầy đủ.",
@@ -287,7 +270,7 @@ func (s *BotServer) handleAIModelCommand(ctx context.Context, b *bot.Bot, msg *m
 	}
 
 	// 2. Load AI Config
-	cfg, err := s.db.GetAIConfig()
+	cfg, err := s.GetActiveAIConfig()
 	if err != nil {
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    chatID,
@@ -295,14 +278,6 @@ func (s *BotServer) handleAIModelCommand(ctx context.Context, b *bot.Bot, msg *m
 			Text:      "❌ Không thể tải cấu hình AI từ database.",
 		})
 		return
-	}
-
-	// Fallback environment settings
-	if cfg.BaseURL == "" {
-		cfg.BaseURL = os.Getenv("OPEN_AI_URL")
-	}
-	if cfg.APIKey == "" {
-		cfg.APIKey = os.Getenv("OPEN_AI_KEY")
 	}
 
 	if cfg.BaseURL == "" || cfg.APIKey == "" {

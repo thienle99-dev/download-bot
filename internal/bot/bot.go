@@ -10,6 +10,7 @@ import (
 	"download-bot/internal/storage"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -251,4 +252,31 @@ func (s *BotServer) prepopulateCache() {
 	}
 
 	s.cache.LoadFromHistory(history, userIDs)
+}
+
+// GetActiveAIConfig retrieves AI configuration from database and falls back to environment variables.
+func (s *BotServer) GetActiveAIConfig() (storage.AIConfig, error) {
+	cfg, err := s.db.GetAIConfig()
+	if err != nil {
+		return cfg, err
+	}
+
+	if cfg.BaseURL == "" {
+		if v := os.Getenv("OPEN_AI_URL"); v != "" {
+			cfg.BaseURL = v
+			cfg.Enabled = true // Auto-enable if env config exists
+		}
+	}
+	if cfg.APIKey == "" {
+		if v := os.Getenv("OPEN_AI_KEY"); v != "" {
+			cfg.APIKey = v
+		}
+	}
+	if cfg.Model == "" {
+		if v := os.Getenv("OPEN_AI_DEFAULT_MODEL"); v != "" {
+			cfg.Model = v
+		}
+	}
+
+	return cfg, nil
 }
