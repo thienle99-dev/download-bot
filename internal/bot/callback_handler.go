@@ -123,8 +123,8 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 				b.EditMessageText(ctx, &bot.EditMessageTextParams{
 					ChatID:    chatID,
 					MessageID: messageID,
-					Text:      fmt.Sprintf("⏳ Đang tải file về máy chủ...\n\n`%s` %.1f%%", progressBar, percent),
-					ParseMode: models.ParseModeMarkdown,
+					Text:      fmt.Sprintf("⏳ Đang tải file về máy chủ...\n\n<code>%s</code> %.1f%%", progressBar, percent),
+					ParseMode: models.ParseModeHTML,
 				})
 			}
 		}

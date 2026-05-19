@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"html"
 	"log"
 	"net/url"
 	"os"
@@ -82,13 +83,13 @@ func (s *BotServer) promptFormatSelection(ctx context.Context, b *bot.Bot, msg *
 	durationMin := int(info.Duration) / 60
 	durationSec := int(info.Duration) % 60
 
-	text := fmt.Sprintf("🎬 *%s*\n⏱ Thời lượng: `%02d:%02d` | Nền tảng: `%s`\n\nChọn chất lượng tải về hoặc chuyển đổi sang MP3:",
-		bot.EscapeMarkdown(title), durationMin, durationSec, platform)
+	text := fmt.Sprintf("🎬 <b>%s</b>\n⏱ Thời lượng: <code>%02d:%02d</code> | Nền tảng: <code>%s</code>\n\nChọn chất lượng tải về hoặc chuyển đổi sang MP3:",
+		html.EscapeString(title), durationMin, durationSec, platform)
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        text,
-		ParseMode:   models.ParseModeMarkdown,
+		ParseMode:   models.ParseModeHTML,
 		ReplyMarkup: BuildFormatKeyboard(urlHash),
 	})
 	if err != nil {
@@ -102,8 +103,8 @@ func (s *BotServer) resendCachedFile(ctx context.Context, b *bot.Bot, chatID int
 		// It's a public download link!
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:    chatID,
-			Text:      fmt.Sprintf("⚡ Video này đã được tải trước đó. Bạn có thể tải file tốc độ cao trực tiếp tại đây:\n🔗 [Nhấn vào để tải xuống](%s)", fileID),
-			ParseMode: models.ParseModeMarkdown,
+			Text:      fmt.Sprintf("⚡ Video này đã được tải trước đó. Bạn có thể tải file tốc độ cao trực tiếp tại đây:\n🔗 <a href=\"%s\">Nhấn vào để tải xuống</a>", fileID),
+			ParseMode: models.ParseModeHTML,
 		})
 		return
 	}
@@ -163,13 +164,13 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 
 		s.LogInfo("Tệp quá giới hạn 50MB (%.2f MB). Phát hành liên kết trực tiếp tốc độ cao: %s", sizeMB, publicLink)
 
-		caption := fmt.Sprintf("⚠️ *File vượt quá giới hạn 50MB của Telegram!* (%.2f MB)\n🎬 *%s*\n\n🚀 Bạn có thể tải file tốc độ cao trực tiếp từ link máy chủ tại đây:\n🔗 [Nhấn vào để tải xuống](%s)",
-			sizeMB, bot.EscapeMarkdown(title), publicLink)
+		caption := fmt.Sprintf("⚠️ <b>File vượt quá giới hạn 50MB của Telegram!</b> (%.2f MB)\n🎬 <b>%s</b>\n\n🚀 Bạn có thể tải file tốc độ cao trực tiếp từ link máy chủ tại đây:\n🔗 <a href=\"%s\">Nhấn vào để tải xuống</a>",
+			sizeMB, html.EscapeString(title), publicLink)
 
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:    chatID,
 			Text:      caption,
-			ParseMode: models.ParseModeMarkdown,
+			ParseMode: models.ParseModeHTML,
 		})
 		if err != nil {
 			s.LogError("Gửi link tải trực tiếp thất bại: %v", err)
@@ -201,8 +202,8 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 		return
 	}
 
-	caption := fmt.Sprintf("✅ *Tải thành công!*\n🎬 %s\n📦 Dung lượng: %.2f MB",
-		bot.EscapeMarkdown(title), sizeMB)
+	caption := fmt.Sprintf("✅ <b>Tải thành công!</b>\n🎬 %s\n📦 Dung lượng: %.2f MB",
+		html.EscapeString(title), sizeMB)
 
 	s.LogInfo("Đang tải tệp %s (%.2f MB) trực tiếp lên đám mây Telegram...", format, sizeMB)
 
@@ -216,7 +217,7 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 				Filename: filepath.Base(localPath),
 				Data:     file,
 			},
-			ParseMode: models.ParseModeMarkdown,
+			ParseMode: models.ParseModeHTML,
 		})
 		if err != nil {
 			s.LogError("Upload file audio thất bại: %v", err)
@@ -238,7 +239,7 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 				Filename: filepath.Base(localPath),
 				Data:     file,
 			},
-			ParseMode: models.ParseModeMarkdown,
+			ParseMode: models.ParseModeHTML,
 		})
 		if err != nil {
 			s.LogError("Upload file video thất bại: %v", err)
