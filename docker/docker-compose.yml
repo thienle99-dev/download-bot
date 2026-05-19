@@ -6,6 +6,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     restart: always
+    env_file:
+      - ../.env
     environment:
       BOT_TOKEN: "${BOT_TOKEN}"
       PUBLIC_URL: "${PUBLIC_URL:-http://localhost:8080}"
