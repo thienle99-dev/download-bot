@@ -278,3 +278,46 @@ func cleanFilename(name string) string {
 	}
 	return strings.Trim(cleaned, "_")
 }
+
+// CompressVideo performs H.264 video compression and optional scaling using ffmpeg
+func (d *Downloader) CompressVideo(ctx context.Context, inputPath string, outputPath string, resolution string) error {
+	inputPath = filepath.Clean(inputPath)
+	outputPath = filepath.Clean(outputPath)
+
+	var scaleFilter string
+	var crf string
+
+	switch resolution {
+	case "720":
+		scaleFilter = "scale='min(1280,iw)':-2"
+		crf = "24"
+	case "480":
+		scaleFilter = "scale='min(854,iw)':-2"
+		crf = "26"
+	case "same":
+		// Ensure width/height are even numbers (trunc(iw/2)*2) to avoid libx264 scaling errors
+		scaleFilter = "scale='trunc(iw/2)*2':'trunc(ih/2)*2'"
+		crf = "24"
+	default:
+		return fmt.Errorf("unsupported compression resolution: %s", resolution)
+	}
+
+	args := []string{
+		"-i", inputPath,
+		"-vf", scaleFilter,
+		"-c:v", "libx264",
+		"-preset", "fast",
+		"-crf", crf,
+		"-c:a", "aac",
+		"-b:a", "128k",
+		"-y", outputPath,
+	}
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg compression failed: %s: %w", string(output), err)
+	}
+
+	return nil
+}
+

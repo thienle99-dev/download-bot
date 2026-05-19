@@ -604,3 +604,92 @@ func (s *BotServer) handleSubtitleDownload(ctx context.Context, b *bot.Bot, chat
 	})
 }
 
+// handleCompressDownload handles download, compression (resolution & bitrate scale) and uploading the compressed video.
+func (s *BotServer) handleCompressDownload(ctx context.Context, b *bot.Bot, chatID int64, userID int64, videoURL string, resolution string) {
+	// Send initial status message
+	statusMsg, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: chatID,
+		Text:   "⏳ Đang tải video gốc chất lượng tốt nhất...",
+	})
+	if err != nil {
+		s.LogError("Send status message failed: %v", err)
+		return
+	}
+
+	cleanup := func() {
+		_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+		})
+	}
+	defer cleanup()
+
+	// 1. Download original video (using best available format option)
+	bestFormat := downloader.AvailableFormats[0]
+	result, err := s.dl.Download(ctx, videoURL, bestFormat, nil)
+	if err != nil {
+		s.LogError("Download original video failed: %v", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Tải video gốc thất bại. Vui lòng thử lại sau.",
+		})
+		return
+	}
+	defer os.Remove(result.FilePath)
+
+	// 2. Define output compressed file path
+	dir := filepath.Dir(result.FilePath)
+	ext := filepath.Ext(result.FilePath)
+	base := strings.TrimSuffix(filepath.Base(result.FilePath), ext)
+	compressedPath := filepath.Join(dir, fmt.Sprintf("%s_compressed_%s.mp4", base, resolution))
+
+	// Edit status message
+	resLabel := resolution + "p"
+	if resolution == "same" {
+		resLabel = "độ phân giải gốc"
+	}
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: statusMsg.ID,
+		Text:      fmt.Sprintf("⚙️ Đang nén video sang định dạng %s (H.264)...", resLabel),
+	})
+
+	// 3. Compress video via ffmpeg
+	if err := s.dl.CompressVideo(ctx, result.FilePath, compressedPath, resolution); err != nil {
+		s.LogError("CompressVideo failed: %v", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Nén video thất bại. Vui lòng thử lại sau.",
+		})
+		return
+	}
+	defer os.Remove(compressedPath)
+
+	// Edit status message
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: statusMsg.ID,
+		Text:      "📤 Đang gửi video đã nén lên Telegram...",
+	})
+
+	// Determine platform
+	platform := "youtube"
+	urlLower := strings.ToLower(videoURL)
+	if strings.Contains(urlLower, "tiktok.com") || strings.Contains(urlLower, "douyin.com") {
+		platform = "tiktok"
+	} else if strings.Contains(urlLower, "instagram.com") {
+		platform = "instagram"
+	} else if strings.Contains(urlLower, "facebook.com") || strings.Contains(urlLower, "fb.watch") {
+		platform = "facebook"
+	}
+
+	// 4. Upload and Save to Database & cache
+	title := result.Title
+	if resolution != "same" {
+		title = fmt.Sprintf("%s (%sp)", title, resolution)
+	} else {
+		title = fmt.Sprintf("%s (Compressed)", title)
+	}
+
+	s.uploadAndSave(ctx, b, chatID, userID, videoURL, title, platform, "mp4", compressedPath)
+}

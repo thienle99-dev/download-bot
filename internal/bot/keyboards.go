@@ -22,6 +22,14 @@ func BuildFormatKeyboard(urlHash string) *models.InlineKeyboardMarkup {
 		})
 	}
 
+	// Add Compressor button
+	rows = append(rows, []models.InlineKeyboardButton{
+		{
+			Text:         "🗜 Nén & Hạ Độ phân giải",
+			CallbackData: fmt.Sprintf("compress:%s", urlHash),
+		},
+	})
+
 	// Add Subtitle button
 	rows = append(rows, []models.InlineKeyboardButton{
 		{
@@ -134,4 +142,41 @@ func BuildSubDownloadTypeKeyboard(urlHash string, lang string) *models.InlineKey
 		},
 	}
 }
+
+// BuildCompressOptionsKeyboard creates inline keyboard showing compression options.
+func BuildCompressOptionsKeyboard(urlHash string) *models.InlineKeyboardMarkup {
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{
+					Text:         "📉 Hạ xuống 720p (Nén trung bình)",
+					CallbackData: fmt.Sprintf("dlcomp:720:%s", urlHash),
+				},
+			},
+			{
+				{
+					Text:         "📉 Hạ xuống 480p (Nén tiết kiệm)",
+					CallbackData: fmt.Sprintf("dlcomp:480:%s", urlHash),
+				},
+			},
+			{
+				{
+					Text:         "🗜 Giữ nguyên độ phân giải",
+					CallbackData: fmt.Sprintf("dlcomp:same:%s", urlHash),
+				},
+			},
+			{
+				{
+					Text:         "⬅️ Quay lại",
+					CallbackData: fmt.Sprintf("back:%s", urlHash),
+				},
+				{
+					Text:         "❌ Hủy",
+					CallbackData: "cancel",
+				},
+			},
+		},
+	}
+}
+
 

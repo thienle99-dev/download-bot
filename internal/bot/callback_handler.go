@@ -60,6 +60,16 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		return
 	}
 
+	if strings.HasPrefix(data, "compress:") {
+		s.handleCompressSelection(ctx, b, callback)
+		return
+	}
+
+	if strings.HasPrefix(data, "dlcomp:") {
+		s.handleCompressDownloadTrigger(ctx, b, callback)
+		return
+	}
+
 	if strings.HasPrefix(data, "sub:") {
 		s.handleSubtitleLanguageSelection(ctx, b, callback)
 		return
@@ -491,3 +501,69 @@ func (s *BotServer) handleBackToFormats(ctx context.Context, b *bot.Bot, callbac
 	})
 }
 
+func (s *BotServer) handleCompressSelection(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+	data := callback.Data
+	parts := strings.Split(data, ":")
+	if len(parts) < 2 {
+		return
+	}
+	urlHash := parts[1]
+
+	_, exists := s.getURL(urlHash)
+	if !exists {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Phiên tải xuống đã hết hạn. Vui lòng gửi lại liên kết video.",
+		})
+		b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
+		return
+	}
+
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:      chatID,
+		MessageID:   messageID,
+		Text:        "🗜 <b>Nén & Hạ độ phân giải Video</b>\n\nVideo tải về sẽ được nén sang định dạng <b>H.264 MP4</b> tương thích 100% với Telegram.\nVui lòng chọn cấu hình nén:",
+		ParseMode:   models.ParseModeHTML,
+		ReplyMarkup: BuildCompressOptionsKeyboard(urlHash),
+	})
+}
+
+func (s *BotServer) handleCompressDownloadTrigger(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+	userID := callback.From.ID
+	data := callback.Data
+	parts := strings.Split(data, ":")
+	if len(parts) < 3 {
+		return
+	}
+	resolution := parts[1]
+	urlHash := parts[2]
+
+	videoURL, exists := s.getURL(urlHash)
+	if !exists {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Phiên tải xuống đã hết hạn. Vui lòng gửi lại liên kết video.",
+		})
+		b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
+		return
+	}
+
+	// Xoá tin nhắn menu
+	_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+	})
+
+	// Kích hoạt goroutine tải/nén
+	go s.handleCompressDownload(ctx, b, chatID, userID, videoURL, resolution)
+}
