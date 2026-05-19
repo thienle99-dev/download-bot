@@ -141,4 +141,3 @@ make dev
 - `make down`: Dừng các containers.
 - `make logs`: Xem log bot thời gian thực.
 - `make clean`: Dọn dẹp tệp cache cục bộ.
-# download-bot

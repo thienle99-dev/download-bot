@@ -1,0 +1,38 @@
+# Binaries and executables
+bot_binary
+check_bin
+bot
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Local configuration files
+.env
+.env.*
+!.env.example
+
+# Runtime downloaded files & cache directories
+downloads/
+cache/
+
+# SQLite Database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# IDE and Editor Files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+
+# Go specific temporary/test files
+*.test
+*.out
