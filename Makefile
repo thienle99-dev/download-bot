@@ -12,8 +12,17 @@ web-build:
 build:
 	docker compose -f docker/docker-compose.yml build
 
+build-prod:
+	docker build -f docker/Dockerfile -t chithien0909/download-bot:latest .
+
+push: build-prod
+	docker push chithien0909/download-bot:latest
+
 up:
 	docker compose -f docker/docker-compose.yml up -d
+
+up-prod:
+	docker compose -f docker/docker-compose.prod.yml up -d
 
 down:
 	docker compose -f docker/docker-compose.yml down
