@@ -241,4 +241,25 @@ func BuildWebSummaryKeyboard(urlHash string) *models.InlineKeyboardMarkup {
 	}
 }
 
+// BuildReplyKeyboard builds the bot's persistent reply keyboard layout.
+func BuildReplyKeyboard(isAdmin bool) *models.ReplyKeyboardMarkup {
+	var row1 []models.KeyboardButton
+	row1 = append(row1, models.KeyboardButton{Text: "🤖 AI Chat (Bật/Tắt)"})
+	row1 = append(row1, models.KeyboardButton{Text: "📖 Hướng dẫn"})
+
+	var row2 []models.KeyboardButton
+	row2 = append(row2, models.KeyboardButton{Text: "📊 Lịch sử tải"})
+	if isAdmin {
+		row2 = append(row2, models.KeyboardButton{Text: "⚙️ Cấu hình Model AI"})
+	}
+
+	keyboard := [][]models.KeyboardButton{row1, row2}
+
+	return &models.ReplyKeyboardMarkup{
+		Keyboard:       keyboard,
+		ResizeKeyboard: true,
+	}
+}
+
+
 

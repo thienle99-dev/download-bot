@@ -88,6 +88,21 @@ func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}
 
+	// Đăng ký menu lệnh Telegram động
+	_, err = b.SetMyCommands(context.Background(), &bot.SetMyCommandsParams{
+		Commands: []models.BotCommand{
+			{Command: "start", Description: "Khởi động bot và hiển thị giới thiệu"},
+			{Command: "help", Description: "Xem hướng dẫn sử dụng chi tiết"},
+			{Command: "ai_chat", Description: "Bật/Tắt chế độ Chat liên tục với AI (không cần gõ /ai)"},
+			{Command: "ai_model", Description: "Chọn cấu hình AI Model (Chỉ Admin)"},
+			{Command: "history", Description: "Xem lịch sử tải xuống gần đây của bạn"},
+			{Command: "clean", Description: "Xóa mã theo dõi (tracking params) khỏi link"},
+		},
+	})
+	if err != nil {
+		log.Printf("Cảnh báo: Đăng ký menu lệnh Telegram thất bại: %v", err)
+	}
+
 	server.tgBot = b
 	return server, nil
 }
@@ -137,6 +152,23 @@ func (s *BotServer) routeUpdate(ctx context.Context, b *bot.Bot, update *models.
 		}
 
 		text := strings.TrimSpace(update.Message.Text)
+
+		// Map Vietnamese Reply Keyboard button text to standard commands
+		switch text {
+		case "🤖 AI Chat (Bật/Tắt)":
+			text = "/ai_chat"
+			update.Message.Text = "/ai_chat"
+		case "📖 Hướng dẫn":
+			text = "/help"
+			update.Message.Text = "/help"
+		case "📊 Lịch sử tải":
+			text = "/history"
+			update.Message.Text = "/history"
+		case "⚙️ Cấu hình Model AI":
+			text = "/ai_model"
+			update.Message.Text = "/ai_model"
+		}
+
 		userID := update.Message.From.ID
 
 		// Check if it's a command

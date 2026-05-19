@@ -43,7 +43,7 @@ func (s *BotServer) handleCommand(ctx context.Context, b *bot.Bot, msg *models.M
 
 	switch cmd {
 	case "/start":
-		s.sendStartMessage(ctx, b, msg.Chat.ID)
+		s.sendStartMessage(ctx, b, msg.Chat.ID, msg.From.ID)
 	case "/help":
 		s.sendHelpMessage(ctx, b, msg.Chat.ID, msg.From.ID)
 	case "/history":
@@ -106,7 +106,7 @@ func (s *BotServer) handleCommand(ctx context.Context, b *bot.Bot, msg *models.M
 	}
 }
 
-func (s *BotServer) sendStartMessage(ctx context.Context, b *bot.Bot, chatID int64) {
+func (s *BotServer) sendStartMessage(ctx context.Context, b *bot.Bot, chatID int64, userID int64) {
 	text := `👋 <b>Xin chào! Tôi là Bot Tải Video/MP3 & Xử lý ảnh.</b>
 
 Tôi hỗ trợ:
@@ -120,10 +120,13 @@ Tôi hỗ trợ:
 
 <i>Tip: Bot có hỗ trợ Inline Mode cho video! Gõ @username_bot &lt;link&gt; ở cuộc chat bất kỳ để tải nhanh.</i>`
 
+	isAdmin := s.cfg.AdminTelegramID != 0 && userID == s.cfg.AdminTelegramID
+
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    chatID,
-		Text:      text,
-		ParseMode: models.ParseModeHTML,
+		ChatID:      chatID,
+		Text:        text,
+		ParseMode:   models.ParseModeHTML,
+		ReplyMarkup: BuildReplyKeyboard(isAdmin),
 	})
 	if err != nil {
 		log.Printf("Failed to send start message: %v", err)
@@ -150,7 +153,8 @@ func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int6
 /id - Lấy User ID & Chat ID hiện tại
 /history - Xem lịch sử tải gần nhất`
 
-	if s.cfg.AdminTelegramID != 0 && userID == s.cfg.AdminTelegramID {
+	isAdmin := s.cfg.AdminTelegramID != 0 && userID == s.cfg.AdminTelegramID
+	if isAdmin {
 		text += `
 
 🛠️ <b>LỆNH QUẢN TRỊ VIÊN (ADMIN):</b>
@@ -160,9 +164,10 @@ func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int6
 	}
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    chatID,
-		Text:      text,
-		ParseMode: models.ParseModeHTML,
+		ChatID:      chatID,
+		Text:        text,
+		ParseMode:   models.ParseModeHTML,
+		ReplyMarkup: BuildReplyKeyboard(isAdmin),
 	})
 	if err != nil {
 		log.Printf("Failed to send help message: %v", err)
