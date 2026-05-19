@@ -131,6 +131,12 @@ func BuildSubDownloadTypeKeyboard(urlHash string, lang string) *models.InlineKey
 			},
 			{
 				{
+					Text:         "🤖 Tóm tắt Video bằng AI",
+					CallbackData: fmt.Sprintf("dlsub:summary:%s:%s", lang, urlHash),
+				},
+			},
+			{
+				{
 					Text:         "⬅️ Quay lại",
 					CallbackData: fmt.Sprintf("sub:%s", urlHash),
 				},
@@ -176,6 +182,42 @@ func BuildCompressOptionsKeyboard(urlHash string) *models.InlineKeyboardMarkup {
 				},
 			},
 		},
+	}
+}
+
+// BuildAIModelKeyboard creates inline keyboard containing available AI models.
+func (s *BotServer) BuildAIModelKeyboard(modelsList []string) *models.InlineKeyboardMarkup {
+	var rows [][]models.InlineKeyboardButton
+
+	// Limit to top 25 models to avoid giant keyboard errors
+	limit := len(modelsList)
+	if limit > 25 {
+		limit = 25
+	}
+
+	for i := 0; i < limit; i++ {
+		modelID := modelsList[i]
+		// Register in urlMap to get a short hash and support long model names safely
+		modelHash := s.registerURL(modelID)
+		
+		rows = append(rows, []models.InlineKeyboardButton{
+			{
+				Text:         modelID,
+				CallbackData: fmt.Sprintf("setmodel:%s", modelHash),
+			},
+		})
+	}
+
+	// Add Cancel button
+	rows = append(rows, []models.InlineKeyboardButton{
+		{
+			Text:         "❌ Hủy",
+			CallbackData: "cancel",
+		},
+	})
+
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: rows,
 	}
 }
 

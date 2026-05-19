@@ -81,6 +81,26 @@ func (s *BotServer) handleCommand(ctx context.Context, b *bot.Bot, msg *models.M
 			ChatID: msg.Chat.ID,
 			Text:   "✅ Đã xóa lịch sử hội thoại AI của bạn. Phiên chat mới bắt đầu!",
 		})
+	case "/ai_chat":
+		s.aiChatMu.Lock()
+		enabled := !s.aiChatEnabled[msg.From.ID]
+		s.aiChatEnabled[msg.From.ID] = enabled
+		s.aiChatMu.Unlock()
+
+		statusText := "🔴 Đã TẮT Chế độ Chat liên tục. Bạn phải dùng lệnh /ai để hỏi AI."
+		if enabled {
+			statusText = "🟢 Đã BẬT Chế độ Chat liên tục. Mọi tin nhắn văn bản bạn gửi (không phải link) sẽ tự động được gửi tới AI."
+		}
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   statusText,
+		})
+	case "/ai_model":
+		if isAdmin {
+			go s.handleAIModelCommand(ctx, b, msg)
+		} else {
+			s.sendHelpMessage(ctx, b, msg.Chat.ID, msg.From.ID)
+		}
 	default:
 		s.sendHelpMessage(ctx, b, msg.Chat.ID, msg.From.ID)
 	}
@@ -115,6 +135,7 @@ func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int6
 
 • <b>Tải video/audio:</b> Gửi trực tiếp link video (YouTube/TikTok/Facebook/Instagram/Twitter...) vào chat.
 • <b>Xử lý ảnh:</b> Gửi 1 hoặc nhiều ảnh (album) vào chat, sau đó chọn thao tác nén/chuyển đổi định dạng để nhận file ZIP.
+• <b>Hỏi đáp AI:</b> Gõ <code>/ai [câu hỏi]</code> hoặc gửi ảnh kèm caption <code>/ai [câu hỏi]</code> để hỏi trợ lý AI.
 • <b>Làm sạch link:</b> Gõ lệnh /clean &lt;link&gt; để loại bỏ các mã theo dõi khỏi liên kết của bạn.
 • <b>Lịch sử tải:</b> Gõ lệnh /history để xem lại 10 video bạn đã tải gần đây.
 • <b>Inline mode:</b> Gõ @username_bot &lt;link&gt; để chia sẻ video trực tiếp vào cuộc chat của bạn bè.
@@ -122,6 +143,9 @@ func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int6
 <b>Các lệnh hiện có:</b>
 /start - Bắt đầu sử dụng bot
 /help - Hướng dẫn sử dụng
+/ai [câu hỏi] - Hỏi đáp trực tiếp với trợ lý AI
+/ai_chat - Bật/tắt chế độ Chat liên tục không cần gõ /ai
+/ai_reset - Xóa ngữ cảnh/lịch sử trò chuyện AI hiện tại
 /clean - Xóa mã theo dõi khỏi link
 /id - Lấy User ID & Chat ID hiện tại
 /history - Xem lịch sử tải gần nhất`
@@ -131,7 +155,8 @@ func (s *BotServer) sendHelpMessage(ctx context.Context, b *bot.Bot, chatID int6
 
 🛠️ <b>LỆNH QUẢN TRỊ VIÊN (ADMIN):</b>
 /admin - Liệt kê 15 lượt tải gần đây trên toàn hệ thống kèm link xóa nhanh
-/del &lt;ID&gt; - Xóa tệp vật lý trên VPS và bản ghi SQLite theo ID`
+/del &lt;ID&gt; - Xóa tệp vật lý trên VPS và bản ghi SQLite theo ID
+/ai_model - Chọn trực tiếp Model AI cho toàn hệ thống từ danh sách provider`
 	}
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{

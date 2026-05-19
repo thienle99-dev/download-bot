@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"html"
@@ -8,8 +9,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 
+	"download-bot/internal/ai"
 	"download-bot/internal/downloader"
 	"download-bot/internal/storage"
 
@@ -692,4 +696,149 @@ func (s *BotServer) handleCompressDownload(ctx context.Context, b *bot.Bot, chat
 	}
 
 	s.uploadAndSave(ctx, b, chatID, userID, videoURL, title, platform, "mp4", compressedPath)
+}
+
+// handleVideoSummary downloads the subtitles, cleans them, and sends a summary prompt to AI.
+func (s *BotServer) handleVideoSummary(ctx context.Context, b *bot.Bot, chatID int64, userID int64, videoURL string, lang string) {
+	// 1. Send status message
+	statusMsg, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: chatID,
+		Text:   fmt.Sprintf("⏳ Đang tải phụ đề [%s] để phân tích...", lang),
+	})
+	if err != nil {
+		return
+	}
+
+	// 2. Download Subtitle (.srt)
+	subPath, err := s.dl.DownloadSubtitle(ctx, videoURL, lang)
+	if err != nil {
+		s.LogError("Tải phụ đề cho tóm tắt thất bại: %v", err)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+			Text:      fmt.Sprintf("❌ Tải phụ đề [%s] thất bại. Có thể video không có phụ đề để tóm tắt.", lang),
+		})
+		return
+	}
+	defer os.Remove(subPath)
+
+	// 3. Clean SRT to plain text
+	textTranscript, err := cleanSRT(subPath)
+	if err != nil || textTranscript == "" {
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+			Text:      "❌ Lỗi khi đọc và làm sạch phụ đề video.",
+		})
+		return
+	}
+
+	// 4. Load AI Config
+	cfg, err := s.db.GetAIConfig()
+	if err != nil || !cfg.Enabled || cfg.BaseURL == "" || cfg.APIKey == "" {
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+			Text:      "⚠️ Tính năng AI chưa được bật hoặc cấu hình chưa đầy đủ.",
+		})
+		return
+	}
+
+	// 5. Update Status
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: statusMsg.ID,
+		Text:      "🤖 AI đang phân tích nội dung phụ đề và tóm tắt...",
+	})
+
+	// 6. Build prompt and ask AI (with streaming)
+	summaryPrompt := "Bạn là một trợ lý tóm tắt video chuyên nghiệp. Hãy đọc bản phụ đề sau và viết bản tóm tắt các nội dung cốt lõi, các mốc quan trọng và bài học chính của video. Trình bày ngắn gọn, súc tích bằng tiếng Việt dạng gạch đầu dòng Markdown."
+	history := []ai.Message{
+		{
+			Role:    "user",
+			Content: fmt.Sprintf("Nội dung phụ đề video cần tóm tắt:\n\n%s", textTranscript),
+		},
+	}
+
+	client := ai.NewClient(cfg.BaseURL, cfg.APIKey, cfg.Model)
+	var fullReply string
+	var lastEditTime time.Time
+
+	err = client.ChatStream(ctx, summaryPrompt, history, func(token string) {
+		fullReply += token
+		if time.Since(lastEditTime) > 1200*time.Millisecond {
+			lastEditTime = time.Now()
+			replyText := fmt.Sprintf("📝 <b>Tóm tắt Video bằng AI</b>\n\n%s", html.EscapeString(fullReply))
+			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+				ChatID:    chatID,
+				MessageID: statusMsg.ID,
+				Text:      replyText,
+				ParseMode: models.ParseModeHTML,
+			})
+		}
+	})
+
+	if err != nil {
+		s.LogError("Tóm tắt bằng AI thất bại: %v", err)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    chatID,
+			MessageID: statusMsg.ID,
+			Text:      fmt.Sprintf("❌ Lỗi AI tóm tắt: %v", err),
+		})
+		return
+	}
+
+	// Final update
+	replyText := fmt.Sprintf("📝 <b>Tóm tắt Video bằng AI</b>\n\n%s", html.EscapeString(fullReply))
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: statusMsg.ID,
+		Text:      replyText,
+		ParseMode: models.ParseModeHTML,
+	})
+}
+
+// cleanSRT reads an SRT file and extracts clean plain text by stripping numbers, timestamps, and formatting.
+func cleanSRT(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	var sb strings.Builder
+	scanner := bufio.NewScanner(file)
+
+	// Precompile regexes
+	timestampRegex := regexp.MustCompile(`\d{2}:\d{2}:\d{2}`)
+	numberRegex := regexp.MustCompile(`^\d+$`)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		// Skip line numbers
+		if numberRegex.MatchString(line) {
+			continue
+		}
+		// Skip timestamps
+		if strings.Contains(line, "-->") || timestampRegex.MatchString(line) {
+			continue
+		}
+
+		sb.WriteString(line)
+		sb.WriteString(" ")
+
+		// Hard limit to prevent token overflow (~30,000 words)
+		if sb.Len() > 150000 {
+			break
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(sb.String()), nil
 }

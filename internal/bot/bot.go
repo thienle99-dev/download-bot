@@ -43,6 +43,8 @@ type BotServer struct {
 	waitingForCut     map[int64]string
 	waitingForCutMu   sync.Mutex
 	aiSessions        *ai.SessionManager
+	aiChatEnabled     map[int64]bool
+	aiChatMu          sync.RWMutex
 }
 
 func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
@@ -63,6 +65,7 @@ func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
 		imageSessions:   make(map[int64]*ImageSession),
 		waitingForCut:   make(map[int64]string),
 		aiSessions:      ai.NewSessionManager(),
+		aiChatEnabled:   make(map[int64]bool),
 	}
 
 	// Try pre-populating the cache from SQLite
@@ -115,8 +118,18 @@ func (s *BotServer) routeUpdate(ctx context.Context, b *bot.Bot, update *models.
 
 	// Handle standard messages
 	if update.Message != nil {
-		// Handle photo messages (image processing feature)
+		// Handle photo messages (image processing feature or AI Vision)
 		if update.Message.Photo != nil && len(update.Message.Photo) > 0 {
+			caption := strings.TrimSpace(update.Message.Caption)
+			s.aiChatMu.RLock()
+			chatEnabled := s.aiChatEnabled[update.Message.From.ID]
+			s.aiChatMu.RUnlock()
+
+			if strings.HasPrefix(caption, "/ai") || chatEnabled {
+				go s.handleAIVision(ctx, b, update.Message)
+				return
+			}
+
 			s.handlePhoto(ctx, b, update.Message)
 			return
 		}
@@ -163,6 +176,16 @@ func (s *BotServer) routeUpdate(ctx context.Context, b *bot.Bot, update *models.
 		cleanedURL, err := CleanURL(text)
 		if err == nil && s.isValidURL(cleanedURL) {
 			s.promptFormatSelection(ctx, b, update.Message, cleanedURL)
+			return
+		}
+
+		// If AI Chat mode is enabled, route normal text messages to AI
+		s.aiChatMu.RLock()
+		chatEnabled := s.aiChatEnabled[userID]
+		s.aiChatMu.RUnlock()
+
+		if chatEnabled && text != "" {
+			go s.handleAIChat(ctx, b, update.Message, text)
 			return
 		}
 

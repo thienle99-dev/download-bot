@@ -1,9 +1,11 @@
 package ai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,8 +15,18 @@ import (
 
 // Message represents a single chat message in OpenAI format.
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string      `json:"role"`
+	Content interface{} `json:"content"` // Can be string or []ContentPart
+}
+
+type ContentPart struct {
+	Type     string         `json:"type"`
+	Text     string         `json:"text,omitempty"`
+	ImageURL *ImageURLParam `json:"image_url,omitempty"`
+}
+
+type ImageURLParam struct {
+	URL string `json:"url"`
 }
 
 // Client wraps an OpenAI-compatible API endpoint.
@@ -98,7 +110,94 @@ func (c *Client) Chat(ctx context.Context, systemPrompt string, history []Messag
 		return "", fmt.Errorf("AI API returned empty choices")
 	}
 
-	return strings.TrimSpace(result.Choices[0].Message.Content), nil
+	contentStr, _ := result.Choices[0].Message.Content.(string)
+	return strings.TrimSpace(contentStr), nil
+}
+
+// ChatStream sends a chat request with stream: true and streams the reply token-by-token.
+func (c *Client) ChatStream(ctx context.Context, systemPrompt string, history []Message, onToken func(string)) error {
+	msgs := make([]Message, 0, len(history)+1)
+	if systemPrompt != "" {
+		msgs = append(msgs, Message{Role: "system", Content: systemPrompt})
+	}
+	msgs = append(msgs, history...)
+
+	// Setup request body
+	reqPayload := map[string]interface{}{
+		"model":    c.model,
+		"messages": msgs,
+		"stream":   true,
+	}
+
+	reqBody, err := json.Marshal(reqPayload)
+	if err != nil {
+		return fmt.Errorf("marshal stream request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("create stream request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("stream API call failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("AI API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("read stream line: %w", err)
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		dataStr := strings.TrimPrefix(line, "data: ")
+		if dataStr == "[DONE]" {
+			break
+		}
+
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+
+		if err := json.Unmarshal([]byte(dataStr), &chunk); err != nil {
+			// Some providers send non-JSON or weird lines, skip them silently
+			continue
+		}
+
+		if len(chunk.Choices) > 0 {
+			content := chunk.Choices[0].Delta.Content
+			if content != "" {
+				onToken(content)
+			}
+		}
+	}
+
+	return nil
 }
 
 type modelsResponse struct {

@@ -85,6 +85,11 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		return
 	}
 
+	if strings.HasPrefix(data, "setmodel:") {
+		s.handleAIModelSelection(ctx, b, callback)
+		return
+	}
+
 	if strings.HasPrefix(data, "back:") {
 		s.handleBackToFormats(ctx, b, callback)
 		return
@@ -442,6 +447,11 @@ func (s *BotServer) handleSubtitleDownloadTrigger(ctx context.Context, b *bot.Bo
 		MessageID: messageID,
 	})
 
+	if downloadType == "summary" {
+		go s.handleVideoSummary(ctx, b, chatID, userID, videoURL, lang)
+		return
+	}
+
 	go s.handleSubtitleDownload(ctx, b, chatID, userID, videoURL, lang, downloadType)
 }
 
@@ -566,4 +576,62 @@ func (s *BotServer) handleCompressDownloadTrigger(ctx context.Context, b *bot.Bo
 
 	// Kích hoạt goroutine tải/nén
 	go s.handleCompressDownload(ctx, b, chatID, userID, videoURL, resolution)
+}
+
+func (s *BotServer) handleAIModelSelection(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	chatID := callback.Message.Message.Chat.ID
+	messageID := callback.Message.Message.ID
+	data := callback.Data
+
+	parts := strings.Split(data, ":")
+	if len(parts) < 2 {
+		return
+	}
+	modelHash := parts[1]
+
+	modelID, exists := s.getURL(modelHash)
+	if !exists {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Phiên làm việc đã hết hạn. Vui lòng gõ lại lệnh /ai_model.",
+		})
+		_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+		})
+		return
+	}
+
+	// Load and Update Config
+	cfg, err := s.db.GetAIConfig()
+	if err != nil {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Không thể tải cấu hình AI để cập nhật.",
+		})
+		return
+	}
+
+	cfg.Model = modelID
+	if err := s.db.SetAIConfig(cfg); err != nil {
+		s.LogError("Failed to update AI model: %v", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Không thể lưu model mới vào cơ sở dữ liệu.",
+		})
+		return
+	}
+
+	// Notify success
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    chatID,
+		ParseMode: models.ParseModeHTML,
+		Text:      fmt.Sprintf("✅ Đã cập nhật Model AI hệ thống thành công!\nModel hoạt động: <code>%s</code>", html.EscapeString(modelID)),
+	})
+
+	// Delete choice keyboard
+	_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+	})
 }
