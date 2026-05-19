@@ -13,7 +13,7 @@ build:
 	docker compose -f docker/docker-compose.yml build
 
 build-prod:
-	docker build -f docker/Dockerfile -t chithien0909/download-bot:latest .
+	docker build --platform linux/amd64 -f docker/Dockerfile -t chithien0909/download-bot:latest .
 
 push: build-prod
 	docker push chithien0909/download-bot:latest
