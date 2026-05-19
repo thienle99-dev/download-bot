@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -149,9 +150,29 @@ func (s *BotServer) resendCachedFile(ctx context.Context, b *bot.Bot, chatID int
 	}
 }
 
+// ProgressReader is an io.Reader wrapper that tracks progress.
+type ProgressReader struct {
+	io.Reader
+	Total      int64
+	Current    int64
+	OnProgress func(percent float64)
+}
+
+func (pr *ProgressReader) Read(p []byte) (int, error) {
+	n, err := pr.Reader.Read(p)
+	if n > 0 {
+		pr.Current += int64(n)
+		if pr.Total > 0 && pr.OnProgress != nil {
+			percent := float64(pr.Current) / float64(pr.Total) * 100
+			pr.OnProgress(percent)
+		}
+	}
+	return n, err
+}
+
 // uploadAndSave sends the downloaded file to Telegram, saves its file_id to SQLite & FileCache.
 // If the file exceeds 50MB, it serves it as an HTTP download link.
-func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64, userID int64, videoURL string, title string, platform string, format string, localPath string) {
+func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64, userID int64, videoURL string, title string, platform string, format string, localPath string, statusMsgID int) {
 	file, err := os.Open(localPath)
 	if err != nil {
 		log.Printf("Failed to open downloaded file for upload: %v", err)
@@ -234,13 +255,35 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 	}
 
 	var fileID string
+	var fileReader io.Reader = file
+	if statusMsgID > 0 {
+		lastPercent := -1.0
+		lastUpdateTime := time.Now()
+		fileReader = &ProgressReader{
+			Reader: file,
+			Total:  stat.Size(),
+			OnProgress: func(percent float64) {
+				if percent-lastPercent >= 15.0 || time.Since(lastUpdateTime) >= 2*time.Second {
+					lastPercent = percent
+					lastUpdateTime = time.Now()
+					progressBar := BuildProgressBar(percent)
+					_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+						ChatID:    chatID,
+						MessageID: statusMsgID,
+						Text:      fmt.Sprintf("☁️ Đang upload lên Telegram...\n\n<code>%s</code> %.1f%%", progressBar, percent),
+						ParseMode: models.ParseModeHTML,
+					})
+				}
+			},
+		}
+	}
 
 	if format == "mp3" || format == "m4a" || format == "flac" {
 		msg, err := b.SendAudio(ctx, &bot.SendAudioParams{
 			ChatID: chatID,
 			Audio: &models.InputFileUpload{
 				Filename: filepath.Base(localPath),
-				Data:     file,
+				Data:     fileReader,
 			},
 		})
 		if err != nil {
@@ -260,7 +303,7 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 			ChatID: chatID,
 			Video: &models.InputFileUpload{
 				Filename: filepath.Base(localPath),
-				Data:     file,
+				Data:     fileReader,
 			},
 		})
 		if err != nil {
@@ -596,7 +639,7 @@ func (s *BotServer) handleSubtitleDownload(ctx context.Context, b *bot.Bot, chat
 	}
 
 	// 1. Upload Video & Save to Database / Cache
-	s.uploadAndSave(ctx, b, chatID, userID, videoURL, result.Title, platform, bestFormat.Extension, result.FilePath)
+	s.uploadAndSave(ctx, b, chatID, userID, videoURL, result.Title, platform, bestFormat.Extension, result.FilePath, statusMsg.ID)
 
 	// 2. Upload Subtitle file
 	sendSRT()
@@ -630,7 +673,24 @@ func (s *BotServer) handleCompressDownload(ctx context.Context, b *bot.Bot, chat
 
 	// 1. Download original video (using best available format option)
 	bestFormat := downloader.AvailableFormats[0]
-	result, err := s.dl.Download(ctx, videoURL, bestFormat, nil)
+
+	lastPercent := -1.0
+	lastUpdateTime := time.Now()
+	onProgress := func(percent float64) {
+		if percent-lastPercent >= 15.0 || time.Since(lastUpdateTime) >= 2*time.Second {
+			lastPercent = percent
+			lastUpdateTime = time.Now()
+			progressBar := BuildProgressBar(percent)
+			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+				ChatID:    chatID,
+				MessageID: statusMsg.ID,
+				Text:      fmt.Sprintf("⏳ Đang tải video gốc...\n\n<code>%s</code> %.1f%%", progressBar, percent),
+				ParseMode: models.ParseModeHTML,
+			})
+		}
+	}
+
+	result, err := s.dl.Download(ctx, videoURL, bestFormat, onProgress)
 	if err != nil {
 		s.LogError("Download original video failed: %v", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -695,7 +755,7 @@ func (s *BotServer) handleCompressDownload(ctx context.Context, b *bot.Bot, chat
 		title = fmt.Sprintf("%s (Compressed)", title)
 	}
 
-	s.uploadAndSave(ctx, b, chatID, userID, videoURL, title, platform, "mp4", compressedPath)
+	s.uploadAndSave(ctx, b, chatID, userID, videoURL, title, platform, "mp4", compressedPath, statusMsg.ID)
 }
 
 // handleVideoSummary downloads the subtitles, cleans them, and sends a summary prompt to AI.

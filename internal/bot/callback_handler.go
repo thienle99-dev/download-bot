@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html"
 	"log"
-	"math"
 	"strings"
 	"time"
 
@@ -181,12 +180,7 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 				s.LogInfo("Tiến trình %s tải xuống: %.1f%%", queueID, percent)
 
 				// Build dynamic visual progress bar
-				barWidth := 10
-				completed := int(math.Round(percent / 10.0))
-				if completed > barWidth {
-					completed = barWidth
-				}
-				progressBar := strings.Repeat("█", completed) + strings.Repeat("░", barWidth-completed)
+				progressBar := BuildProgressBar(percent)
 
 				b.EditMessageText(ctx, &bot.EditMessageTextParams{
 					ChatID:    chatID,
@@ -240,7 +234,7 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		}
 
 		// Upload file to chat, store record, cache
-		s.uploadAndSave(ctx, b, chatID, userID, videoURL, result.Title, platform, selectedOption.Extension, result.FilePath)
+		s.uploadAndSave(ctx, b, chatID, userID, videoURL, result.Title, platform, selectedOption.Extension, result.FilePath, messageID)
 
 		// Delete the temporary status message
 		b.DeleteMessage(ctx, &bot.DeleteMessageParams{

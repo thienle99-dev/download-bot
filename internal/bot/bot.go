@@ -10,6 +10,7 @@ import (
 	"download-bot/internal/storage"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strings"
 	"sync"
@@ -279,4 +280,17 @@ func (s *BotServer) GetActiveAIConfig() (storage.AIConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+// BuildProgressBar generates an ASCII progress bar string like [███████░░░].
+func BuildProgressBar(percent float64) string {
+	barWidth := 10
+	completed := int(math.Round(percent / 10.0))
+	if completed > barWidth {
+		completed = barWidth
+	}
+	if completed < 0 {
+		completed = 0
+	}
+	return strings.Repeat("█", completed) + strings.Repeat("░", barWidth-completed)
 }
