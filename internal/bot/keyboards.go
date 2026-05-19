@@ -17,7 +17,7 @@ func BuildFormatKeyboard(urlHash string) *models.InlineKeyboardMarkup {
 		rows = append(rows, []models.InlineKeyboardButton{
 			{
 				Text:         format.Label,
-				CallbackData: fmt.Sprintf("dl:%s:%s", format.Extension, urlHash),
+				CallbackData: fmt.Sprintf("dl:%s:%s", format.ID, urlHash),
 			},
 		})
 	}

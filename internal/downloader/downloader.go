@@ -101,8 +101,10 @@ func (d *Downloader) Download(ctx context.Context, url string, option FormatOpti
 		args = append(args,
 			"-f", option.YtDlpFormat,
 			"--extract-audio",
-			"--audio-format", "mp3",
+			"--audio-format", option.AudioFormat,
 			"--audio-quality", "0",
+			"--embed-metadata",
+			"--embed-thumbnail",
 			"-o", tempTemplate,
 		)
 	} else {
@@ -164,7 +166,7 @@ func (d *Downloader) Download(ctx context.Context, url string, option FormatOpti
 	// Find the output file
 	expectedExt := "mp4"
 	if option.IsAudioOnly {
-		expectedExt = "mp3"
+		expectedExt = option.Extension
 	}
 
 	pattern := filepath.Join(d.downloadDir, safeTitle+".*")

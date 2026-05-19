@@ -42,7 +42,7 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		if len(parts) < 3 {
 			return
 		}
-		ext := parts[1]
+		formatID := parts[1]
 		urlHash := parts[2]
 
 		videoURL, exists := s.getURL(urlHash)
@@ -62,7 +62,7 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		var selectedOption downloader.FormatOption
 		found := false
 		for _, opt := range downloader.AvailableFormats {
-			if opt.Extension == ext {
+			if opt.ID == formatID {
 				selectedOption = opt
 				found = true
 				break
@@ -177,7 +177,7 @@ func (s *BotServer) handleCallback(ctx context.Context, b *bot.Bot, callback *mo
 		}
 
 		// Upload file to chat, store record, cache
-		s.uploadAndSave(ctx, b, chatID, userID, videoURL, result.Title, platform, ext, result.FilePath)
+		s.uploadAndSave(ctx, b, chatID, userID, videoURL, result.Title, platform, selectedOption.Extension, result.FilePath)
 
 		// Delete the temporary status message
 		b.DeleteMessage(ctx, &bot.DeleteMessageParams{

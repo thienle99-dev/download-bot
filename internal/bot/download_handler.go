@@ -125,7 +125,7 @@ func (s *BotServer) resendCachedFile(ctx context.Context, b *bot.Bot, chatID int
 		Text:   "⚡ Video này đã được tải trước đó. Đang gửi lại ngay lập tức...",
 	})
 
-	if format == "mp3" {
+	if format == "mp3" || format == "m4a" || format == "flac" {
 		_, err := b.SendAudio(ctx, &bot.SendAudioParams{
 			ChatID: chatID,
 			Audio:  &models.InputFileString{Data: fileID},
@@ -220,7 +220,7 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 
 	var fileID string
 
-	if format == "mp3" {
+	if format == "mp3" || format == "m4a" || format == "flac" {
 		msg, err := b.SendAudio(ctx, &bot.SendAudioParams{
 			ChatID:  chatID,
 			Caption: caption,
