@@ -369,9 +369,20 @@ func (s *BotServer) handleCutProcess(ctx context.Context, b *bot.Bot, msg *model
 		return
 	}
 
+	keepStatus := false
+	defer func() {
+		if !keepStatus {
+			_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+				ChatID:    chatID,
+				MessageID: statusMsg.ID,
+			})
+		}
+	}()
+
 	// 2. Parse range
 	start, end, err := downloader.ParseRange(rangeStr)
 	if err != nil {
+		keepStatus = true
 		b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    chatID,
 			MessageID: statusMsg.ID,
@@ -383,6 +394,7 @@ func (s *BotServer) handleCutProcess(ctx context.Context, b *bot.Bot, msg *model
 
 	duration := end - start
 	if duration > 60 {
+		keepStatus = true
 		b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    chatID,
 			MessageID: statusMsg.ID,
@@ -401,6 +413,7 @@ func (s *BotServer) handleCutProcess(ctx context.Context, b *bot.Bot, msg *model
 	result, err := s.dl.DownloadSection(ctx, videoURL, start, end)
 	if err != nil {
 		s.LogError("Cắt video thất bại: %v", err)
+		keepStatus = true
 		b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    chatID,
 			MessageID: statusMsg.ID,
@@ -503,11 +516,7 @@ func (s *BotServer) handleCutProcess(ctx context.Context, b *bot.Bot, msg *model
 		}
 	}
 
-	// Xóa tin nhắn trạng thái
-	b.DeleteMessage(ctx, &bot.DeleteMessageParams{
-		ChatID:    chatID,
-		MessageID: statusMsg.ID,
-	})
+	// Defer cleanup will delete statusMsg automatically since keepStatus is false
 
 	// Lưu lịch sử tải
 	if videoMsg != nil && videoMsg.Video != nil {
@@ -539,10 +548,21 @@ func (s *BotServer) handleSubtitleDownload(ctx context.Context, b *bot.Bot, chat
 		return
 	}
 
+	keepStatus := false
+	defer func() {
+		if !keepStatus {
+			_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+				ChatID:    chatID,
+				MessageID: statusMsg.ID,
+			})
+		}
+	}()
+
 	// 2. Download Subtitle (.srt)
 	subPath, err := s.dl.DownloadSubtitle(ctx, videoURL, lang)
 	if err != nil {
 		s.LogError("Tải phụ đề [%s] thất bại: %v", lang, err)
+		keepStatus = true
 		b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    chatID,
 			MessageID: statusMsg.ID,
@@ -584,11 +604,9 @@ func (s *BotServer) handleSubtitleDownload(ctx context.Context, b *bot.Bot, chat
 		})
 
 		if sendSRT() {
-			b.DeleteMessage(ctx, &bot.DeleteMessageParams{
-				ChatID:    chatID,
-				MessageID: statusMsg.ID,
-			})
+			// Defer will clean statusMsg
 		} else {
+			keepStatus = true
 			b.EditMessageText(ctx, &bot.EditMessageTextParams{
 				ChatID:    chatID,
 				MessageID: statusMsg.ID,
@@ -612,6 +630,7 @@ func (s *BotServer) handleSubtitleDownload(ctx context.Context, b *bot.Bot, chat
 	})
 	if err != nil {
 		s.LogError("Tải video thất bại trong tiến trình subtitle: %v", err)
+		keepStatus = true
 		b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    chatID,
 			MessageID: statusMsg.ID,
@@ -644,11 +663,7 @@ func (s *BotServer) handleSubtitleDownload(ctx context.Context, b *bot.Bot, chat
 	// 2. Upload Subtitle file
 	sendSRT()
 
-	// Cleanup the status message
-	b.DeleteMessage(ctx, &bot.DeleteMessageParams{
-		ChatID:    chatID,
-		MessageID: statusMsg.ID,
-	})
+	// Defer will automatically clean statusMsg
 }
 
 // handleCompressDownload handles download, compression (resolution & bitrate scale) and uploading the compressed video.
