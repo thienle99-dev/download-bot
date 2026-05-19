@@ -3,6 +3,16 @@
 dev:
 	go run ./cmd/bot
 
+# Run both Backend and Frontend Dev server (Vite on port 5173, Go on port 8080)
+dev-all:
+	@echo "🚀 Starting Go backend and Vite frontend dev server..."
+	@trap 'kill 0' INT; (cd web && pnpm run dev) & go run ./cmd/bot
+
+# Run Go backend and compile Svelte on changes (served directly by Go on port 8080)
+dev-watch:
+	@echo "🚀 Starting Go backend and Frontend auto-rebuild (Watch)..."
+	@trap 'kill 0' INT; (cd web && pnpm run build --watch) & go run ./cmd/bot
+
 web-dev:
 	cd web && pnpm run dev
 
