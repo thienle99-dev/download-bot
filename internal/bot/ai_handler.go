@@ -71,7 +71,7 @@ func (s *BotServer) handleAIChat(ctx context.Context, b *bot.Bot, msg *models.Me
 		// To prevent Telegram rate limiting (max ~1 edit/sec per message), throttle edits
 		if time.Since(lastEditTime) > 1200*time.Millisecond {
 			lastEditTime = time.Now()
-			replyText := fmt.Sprintf("🤖 <b>Trợ lý AI</b>\n\n<blockquote>%s</blockquote>", html.EscapeString(fullReply))
+			replyText := fmt.Sprintf("🤖 <b>Trợ lý AI</b>\n\n%s", FormatMarkdownToTelegramHTML(fullReply))
 			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 				ChatID:    chatID,
 				MessageID: statusMsg.ID,
@@ -102,7 +102,7 @@ func (s *BotServer) handleAIChat(ctx context.Context, b *bot.Bot, msg *models.Me
 	}
 
 	// 5. Final update to ensure the message is fully completed
-	replyText := fmt.Sprintf("🤖 <b>Trợ lý AI</b>\n\n<blockquote>%s</blockquote>", html.EscapeString(fullReply))
+	replyText := fmt.Sprintf("🤖 <b>Trợ lý AI</b>\n\n%s", FormatMarkdownToTelegramHTML(fullReply))
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    chatID,
 		MessageID: statusMsg.ID,
@@ -222,7 +222,7 @@ func (s *BotServer) handleAIVision(ctx context.Context, b *bot.Bot, msg *models.
 
 		if time.Since(lastEditTime) > 1200*time.Millisecond {
 			lastEditTime = time.Now()
-			replyText := fmt.Sprintf("🤖 <b>Trợ lý AI (Vision)</b>\n\n<blockquote>%s</blockquote>", html.EscapeString(fullReply))
+			replyText := fmt.Sprintf("🤖 <b>Trợ lý AI (Vision)</b>\n\n%s", FormatMarkdownToTelegramHTML(fullReply))
 			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 				ChatID:    chatID,
 				MessageID: statusMsg.ID,
@@ -243,7 +243,7 @@ func (s *BotServer) handleAIVision(ctx context.Context, b *bot.Bot, msg *models.
 	}
 
 	// Final message update
-	replyText := fmt.Sprintf("🤖 <b>Trợ lý AI (Vision)</b>\n\n<blockquote>%s</blockquote>", html.EscapeString(fullReply))
+	replyText := fmt.Sprintf("🤖 <b>Trợ lý AI (Vision)</b>\n\n%s", FormatMarkdownToTelegramHTML(fullReply))
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    chatID,
 		MessageID: statusMsg.ID,

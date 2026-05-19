@@ -828,7 +828,7 @@ func (s *BotServer) handleVideoSummary(ctx context.Context, b *bot.Bot, chatID i
 		fullReply += token
 		if time.Since(lastEditTime) > 1200*time.Millisecond {
 			lastEditTime = time.Now()
-			replyText := fmt.Sprintf("📝 <b>Tóm tắt Video bằng AI</b>\n\n<blockquote>%s</blockquote>", html.EscapeString(fullReply))
+			replyText := fmt.Sprintf("📝 <b>Tóm tắt Video bằng AI</b>\n\n%s", FormatMarkdownToTelegramHTML(fullReply))
 			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 				ChatID:    chatID,
 				MessageID: statusMsg.ID,
@@ -849,7 +849,7 @@ func (s *BotServer) handleVideoSummary(ctx context.Context, b *bot.Bot, chatID i
 	}
 
 	// Final update
-	replyText := fmt.Sprintf("📝 <b>Tóm tắt Video bằng AI</b>\n\n<blockquote>%s</blockquote>", html.EscapeString(fullReply))
+	replyText := fmt.Sprintf("📝 <b>Tóm tắt Video bằng AI</b>\n\n%s", FormatMarkdownToTelegramHTML(fullReply))
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    chatID,
 		MessageID: statusMsg.ID,
