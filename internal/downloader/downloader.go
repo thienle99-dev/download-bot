@@ -12,6 +12,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 )
 
 type Downloader struct {
@@ -111,7 +116,7 @@ func (d *Downloader) Download(ctx context.Context, url string, option FormatOpti
 	args = append(args, url)
 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-	
+
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -195,10 +200,23 @@ func (d *Downloader) Download(ctx context.Context, url string, option FormatOpti
 	}, nil
 }
 
+func removeAccents(s string) string {
+	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	result, _, _ := transform.String(t, s)
+	result = strings.ReplaceAll(result, "đ", "d")
+	result = strings.ReplaceAll(result, "Đ", "D")
+	return result
+}
+
 func cleanFilename(name string) string {
+	name = removeAccents(name)
 	// Strip characters that are unsafe or problematic across systems/terminals
-	reg := regexp.MustCompile(`[\\/:*?"<>|#\[\]\s]+`)
-	cleaned := reg.ReplaceAllString(name, "_")
+	reg := regexp.MustCompile(`[^a-zA-Z0-9.-]+`)
+	cleaned := reg.ReplaceAllString(name, " ")
+	cleaned = strings.TrimSpace(cleaned)
+	// Replace spaces with underscores
+	cleaned = strings.ReplaceAll(cleaned, " ", "_")
+
 	// Trim length to avoid filesystem path limit issues
 	if len(cleaned) > 100 {
 		cleaned = cleaned[:100]

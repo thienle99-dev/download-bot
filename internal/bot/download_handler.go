@@ -160,7 +160,7 @@ func (s *BotServer) uploadAndSave(ctx context.Context, b *bot.Bot, chatID int64,
 		fileName := filepath.Base(localPath)
 		// URL encode filename for web safety
 		encodedName := url.PathEscape(fileName)
-		publicLink := fmt.Sprintf("%s/files/%s", s.cfg.PublicURL, encodedName)
+		publicLink := fmt.Sprintf("%s/videos/downloads/%s", s.cfg.PublicURL, encodedName)
 
 		s.LogInfo("Tệp quá giới hạn 50MB (%.2f MB). Phát hành liên kết trực tiếp tốc độ cao: %s", sizeMB, publicLink)
 
