@@ -4,10 +4,10 @@ dev:
 	go run ./cmd/bot
 
 web-dev:
-	cd web && npm run dev
+	cd web && pnpm run dev
 
 web-build:
-	cd web && npm run build
+	cd web && pnpm run build
 
 build:
 	docker compose -f docker/docker-compose.yml build
