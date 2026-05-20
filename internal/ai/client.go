@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -17,7 +18,11 @@ import (
 const (
 	defaultRequestTimeout       = 5 * time.Minute
 	streamResponseHeaderTimeout = 5 * time.Minute
+	citationMarkerStart         = "\uE200cite\uE202"
+	citationMarkerEnd           = "\uE201"
 )
+
+var citationMarkerRegex = regexp.MustCompile(`\x{E200}cite\x{E202}.*?\x{E201}`)
 
 // Message represents a single chat message in OpenAI format.
 type Message struct {
@@ -133,7 +138,7 @@ func (c *Client) Chat(ctx context.Context, systemPrompt string, history []Messag
 	}
 
 	contentStr, _ := result.Choices[0].Message.Content.(string)
-	return strings.TrimSpace(contentStr), nil
+	return strings.TrimSpace(sanitizeAIContent(contentStr)), nil
 }
 
 // ChatStream sends a chat request with stream: true and streams the reply token-by-token.
@@ -175,6 +180,7 @@ func (c *Client) ChatStream(ctx context.Context, systemPrompt string, history []
 	}
 
 	reader := bufio.NewReader(resp.Body)
+	sanitizer := newCitationStreamSanitizer(onToken)
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -214,12 +220,94 @@ func (c *Client) ChatStream(ctx context.Context, systemPrompt string, history []
 		if len(chunk.Choices) > 0 {
 			content := chunk.Choices[0].Delta.Content
 			if content != "" {
-				onToken(content)
+				sanitizer.Write(content)
 			}
 		}
 	}
 
+	sanitizer.Flush()
 	return nil
+}
+
+func sanitizeAIContent(content string) string {
+	return citationMarkerRegex.ReplaceAllString(content, "")
+}
+
+type citationStreamSanitizer struct {
+	pending string
+	emit    func(string)
+}
+
+func newCitationStreamSanitizer(emit func(string)) *citationStreamSanitizer {
+	return &citationStreamSanitizer{emit: emit}
+}
+
+func (s *citationStreamSanitizer) Write(token string) {
+	s.pending += token
+	s.drain(false)
+}
+
+func (s *citationStreamSanitizer) Flush() {
+	s.drain(true)
+}
+
+func (s *citationStreamSanitizer) drain(flush bool) {
+	for {
+		start := strings.Index(s.pending, citationMarkerStart)
+		if start >= 0 {
+			s.emitIfNotEmpty(s.pending[:start])
+			s.pending = s.pending[start:]
+
+			end := strings.Index(s.pending[len(citationMarkerStart):], citationMarkerEnd)
+			if end < 0 {
+				if flush {
+					s.pending = ""
+				}
+				return
+			}
+
+			end += len(citationMarkerStart)
+			s.pending = s.pending[end+len(citationMarkerEnd):]
+			continue
+		}
+
+		if flush {
+			s.emitIfNotEmpty(s.pending)
+			s.pending = ""
+			return
+		}
+
+		keep := longestSuffixPrefix(s.pending, citationMarkerStart)
+		emitLen := len(s.pending) - keep
+		if emitLen <= 0 {
+			return
+		}
+
+		s.emitIfNotEmpty(s.pending[:emitLen])
+		s.pending = s.pending[emitLen:]
+		return
+	}
+}
+
+func (s *citationStreamSanitizer) emitIfNotEmpty(token string) {
+	if token != "" {
+		s.emit(token)
+	}
+}
+
+func longestSuffixPrefix(value, prefix string) int {
+	max := len(value)
+	if len(prefix)-1 < max {
+		max = len(prefix) - 1
+	}
+
+	for n := max; n > 0; n-- {
+		if strings.HasSuffix(value, prefix[:n]) {
+			return n
+		}
+	}
+
+	return 0
 }
 
 type modelsResponse struct {
