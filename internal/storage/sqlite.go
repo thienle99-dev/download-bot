@@ -74,6 +74,16 @@ func createSchema(db *sql.DB) error {
 		value TEXT NOT NULL,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE TABLE IF NOT EXISTS ai_sessions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_ai_sessions_user ON ai_sessions(user_id);
+	CREATE INDEX IF NOT EXISTS idx_ai_sessions_created ON ai_sessions(created_at);
 	`
 	_, err := db.Exec(schema)
 	return err

@@ -3,7 +3,6 @@ package bot
 import (
 	"context"
 	"crypto/md5"
-	"download-bot/internal/ai"
 	"download-bot/internal/cache"
 	"download-bot/internal/config"
 	"download-bot/internal/downloader"
@@ -44,7 +43,7 @@ type BotServer struct {
 	imageSessionsMu   sync.RWMutex
 	waitingForCut     map[int64]string
 	waitingForCutMu   sync.Mutex
-	aiSessions        *ai.SessionManager
+	aiSessions        *PersistentSessionManager
 	aiChatEnabled     map[int64]bool
 	aiChatMu          sync.RWMutex
 }
@@ -66,7 +65,7 @@ func NewBotServer(cfg *config.Config, db *storage.DB) (*BotServer, error) {
 		activeDownloads: make(map[string]*QueueItem),
 		imageSessions:   make(map[int64]*ImageSession),
 		waitingForCut:   make(map[int64]string),
-		aiSessions:      ai.NewSessionManager(),
+		aiSessions:      NewPersistentSessionManager(db, defaultMaxHistory),
 		aiChatEnabled:   make(map[int64]bool),
 	}
 
