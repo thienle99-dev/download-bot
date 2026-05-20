@@ -1,7 +1,7 @@
 # Stage 1: Build Svelte frontend
-FROM node:alpine AS web-builder
+FROM node:24-alpine AS web-builder
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm@10.33.3
 COPY web/package.json web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
