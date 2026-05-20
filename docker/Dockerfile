@@ -1,10 +1,11 @@
 # Stage 1: Build Svelte frontend
 FROM node:alpine AS web-builder
 WORKDIR /app
-COPY web/package.json web/pnpm-lock.yaml* ./
-RUN npm install --legacy-peer-deps
+RUN corepack enable && corepack prepare pnpm@latest --activate
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY web/ ./
-RUN npm run build
+RUN pnpm run build
 
 # Stage 2: Build Go application
 FROM golang:1.26-alpine AS go-builder

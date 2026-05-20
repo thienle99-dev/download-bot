@@ -5,14 +5,10 @@ services:
     env_file:
       - ../.env
     environment:
-      BOT_TOKEN: "${BOT_TOKEN}"
-      PUBLIC_URL: "${PUBLIC_URL:-http://localhost:8080}"
       SERVER_PORT: "${SERVER_PORT:-:8080}"
       DB_PATH: "/data/db/bot.db"
       DOWNLOAD_DIR: "/data/downloads"
       CACHE_DIR: "/data/cache"
-      MAX_CONCURRENT: "${MAX_CONCURRENT:-3}"
-      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin123}"
     ports:
       - "8080:8080"
     volumes:

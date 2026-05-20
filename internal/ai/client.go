@@ -8,9 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
+)
+
+const (
+	defaultRequestTimeout       = 5 * time.Minute
+	streamResponseHeaderTimeout = 5 * time.Minute
 )
 
 // Message represents a single chat message in OpenAI format.
@@ -31,10 +37,11 @@ type ImageURLParam struct {
 
 // Client wraps an OpenAI-compatible API endpoint.
 type Client struct {
-	baseURL    string
-	apiKey     string
-	model      string
-	httpClient *http.Client
+	baseURL          string
+	apiKey           string
+	model            string
+	httpClient       *http.Client
+	streamHTTPClient *http.Client
 }
 
 // NewClient creates a new AI API client.
@@ -45,7 +52,22 @@ func NewClient(baseURL, apiKey, model string) *Client {
 		apiKey:  apiKey,
 		model:   model,
 		httpClient: &http.Client{
-			Timeout: 90 * time.Second,
+			Timeout: defaultRequestTimeout,
+		},
+		streamHTTPClient: &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				DialContext: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+				ResponseHeaderTimeout: streamResponseHeaderTimeout,
+			},
 		},
 	}
 }
@@ -87,7 +109,7 @@ func (c *Client) Chat(ctx context.Context, systemPrompt string, history []Messag
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.streamHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("chat API call failed: %w", err)
 	}
